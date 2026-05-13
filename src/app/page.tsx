@@ -48,7 +48,7 @@ export default function DashboardPage() {
     // Hydrate owner context profile data securely
     async function loadOwnerSession() {
       try {
-        const res = await api.post("/owners/login", { email: cachedEmail });
+        const res = await api.post("/owners/restore", { email: cachedEmail });
         setActiveOwner(res.data);
       } catch (err) {
         console.error("Session matching validation failed, clearing space:", err);
