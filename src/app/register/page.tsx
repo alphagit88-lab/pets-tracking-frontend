@@ -9,6 +9,7 @@ function RegisterPageContent() {
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
+    password: "",
     mobile: "",
     passportNic: "",
     address: "",
@@ -27,6 +28,10 @@ function RegisterPageContent() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!formData.password) {
+      setErrorMsg("Please specify a strong authentication access token (password).");
+      return;
+    }
     setLoading(true);
     setErrorMsg("");
 
@@ -45,7 +50,7 @@ function RegisterPageContent() {
 
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center overflow-hidden py-12">
-      
+
       {/* Absolute Premium Unsplash Background Image Layer */}
       <div className="absolute inset-0 z-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -61,7 +66,7 @@ function RegisterPageContent() {
 
       {/* Floating Glassmorphic Registration Roster Card */}
       <div className="relative z-10 max-w-2xl w-full mx-4 bg-slate-900/85 backdrop-blur-2xl border border-slate-700/60 rounded-3xl p-8 md:p-10 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden animate-fade-in">
-        
+
         {/* Glow Elements */}
         <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute -top-32 -right-32 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -114,7 +119,19 @@ function RegisterPageContent() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Mobile Access Contact</label>
+            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Password *</label>
+            <input
+              type="password"
+              required
+              placeholder="••••••••••••"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-950/90 border border-slate-700/80 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Mobile  Contact</label>
             <input
               type="text"
               placeholder="+1 (555) 019-2834"
@@ -135,17 +152,6 @@ function RegisterPageContent() {
             />
           </div>
 
-          <div className="md:col-span-2">
-            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Primary Base Address</label>
-            <input
-              type="text"
-              placeholder="742 Evergreen Terrace"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-950/90 border border-slate-700/80 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all font-medium"
-            />
-          </div>
-
           <div>
             <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Country Signature</label>
             <input
@@ -157,8 +163,19 @@ function RegisterPageContent() {
             />
           </div>
 
+          <div className="md:col-span-2">
+            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Primary Address</label>
+            <input
+              type="text"
+              placeholder="742 Evergreen Terrace"
+              value={formData.address}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-950/90 border border-slate-700/80 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all font-medium"
+            />
+          </div>
+
           <div>
-            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Emergency Proxy Name</label>
+            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Emergency  Name</label>
             <input
               type="text"
               placeholder="Sarah Proxy"
@@ -174,15 +191,15 @@ function RegisterPageContent() {
               disabled={loading}
               className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs tracking-widest uppercase transition-all shadow-xl shadow-emerald-500/20 active:scale-[0.99]"
             >
-              {loading ? "Allocating Persistent Storage Matrix..." : "Confirm & Commit New Guardian Workspace"}
+              {loading ? "Allocating Persistent Storage Matrix..." : "   Confirm Identity "}
             </button>
           </div>
         </form>
 
         <div className="mt-8 pt-5 border-t border-slate-800/80 text-center text-xs text-slate-400 relative">
-          <span>Already allocated a session space? </span>
+          <span>Already have an account? </span>
           <a href="/login" className="text-emerald-400 hover:text-emerald-300 hover:underline font-extrabold ml-1 block mt-1 sm:inline sm:mt-0 transition-colors">
-            Access Portal Identity →
+            login →
           </a>
         </div>
 

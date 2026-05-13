@@ -5,6 +5,7 @@ import { api } from "../../lib/axios";
 
 function LoginPageContent() {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -18,12 +19,12 @@ function LoginPageContent() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password) return;
     setLoading(true);
     setErrorMsg("");
 
     try {
-      const res = await api.post("/owners/login", { email: email.trim() });
+      const res = await api.post("/owners/login", { email: email.trim(), password });
       if (typeof window !== "undefined") {
         localStorage.setItem("titan_core_active_owner_email", res.data.email);
         window.location.href = "/owners";
@@ -37,7 +38,7 @@ function LoginPageContent() {
 
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center overflow-hidden">
-      
+
       {/* Absolute Premium Unsplash Background Image Layer */}
       <div className="absolute inset-0 z-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -67,7 +68,7 @@ function LoginPageContent() {
           <h1 className="text-3xl font-black text-white tracking-tight">Guardian Sign-In</h1>
           <div className="w-12 h-1 bg-sky-500 mx-auto mt-2 rounded-full"></div>
           <p className="text-xs text-slate-300 mt-3 leading-relaxed">
-            Access your synchronized repository of digital pet passports and real-time medical updates.
+            Access your synchronized portal of digital pet passports and real-time medical updates.
           </p>
         </div>
 
@@ -80,7 +81,7 @@ function LoginPageContent() {
         <form onSubmit={handleLogin} className="space-y-5 relative">
           <div>
             <label className="block text-[11px] font-extrabold text-sky-400 uppercase mb-2 tracking-wider">
-              Account Email Signature *
+              Account Email *
             </label>
             <input
               type="email"
@@ -88,6 +89,20 @@ function LoginPageContent() {
               placeholder="guardian@domain.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-3.5 bg-slate-950/90 border border-slate-700/80 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all shadow-inner font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-extrabold text-sky-400 uppercase mb-2 tracking-wider">
+              Password *
+            </label>
+            <input
+              type="password"
+              required
+              placeholder="••••••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3.5 bg-slate-950/90 border border-slate-700/80 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all shadow-inner font-medium"
             />
           </div>
@@ -104,7 +119,7 @@ function LoginPageContent() {
         <div className="mt-8 pt-5 border-t border-slate-800/80 text-center text-xs text-slate-400">
           <span>Unregistered Guardian Identity? </span>
           <a href="/register" className="text-sky-400 hover:text-sky-300 hover:underline font-extrabold ml-1 block mt-1 sm:inline sm:mt-0 transition-colors">
-            Create Account Space →
+            Create Account →
           </a>
         </div>
 
