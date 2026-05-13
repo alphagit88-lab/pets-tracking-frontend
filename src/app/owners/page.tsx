@@ -70,7 +70,7 @@ function GuardianPortalContent() {
 
   async function executeSilentSessionRestore(email: string) {
     try {
-      const res = await api.post("/owners/login", { email });
+      const res = await api.post("/owners/restore", { email });
       setActiveOwner(res.data);
       initializeOwnerEditState(res.data);
     } catch (err) {
@@ -98,7 +98,7 @@ function GuardianPortalContent() {
   async function reloadActiveOwnerSession() {
     if (!activeOwner?.email) return;
     try {
-      const res = await api.post("/owners/login", { email: activeOwner.email });
+      const res = await api.post("/owners/restore", { email: activeOwner.email });
       setActiveOwner(res.data);
       initializeOwnerEditState(res.data);
     } catch (err) {
