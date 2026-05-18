@@ -6,7 +6,7 @@ import { api } from "../../lib/axios";
 // Helper Vector Accents
 const PawSmallIcon = () => (
   <svg className="w-3.5 h-3.5 text-orange-400 inline mr-1" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 14c-1.66 0-3 1.34-3 3 0 2 1 3 3 3s3-1 3-3c0-1.66-1.34-3-3-3zm-4.5-2c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm9 0c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-11-4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm13 0c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/>
+    <path d="M12 14c-1.66 0-3 1.34-3 3 0 2 1 3 3 3s3-1 3-3c0-1.66-1.34-3-3-3zm-4.5-2c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm9 0c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-11-4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm13 0c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z" />
   </svg>
 );
 
@@ -220,25 +220,25 @@ function GuardianPortalContent() {
   if (sessionLoading) {
     return (
       <div className="w-full max-w-[1720px] mx-auto py-24 px-6 flex items-center justify-center text-slate-500 font-mono text-xs animate-pulse">
-        Restoring Verified Guardian Session Workspace...
+        Loading Guardian Workspace...
       </div>
     );
   }
 
   return (
     <div className="w-full max-w-[1720px] mx-auto py-10 px-6 flex-1 flex flex-col gap-8">
-      
+
       {/* Dynamic Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/40 p-6 rounded-2xl border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-xl">
         <div>
           <div className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-1">
             Guardian Lifecycle Access
           </div>
           <h1 className="text-2xl font-black text-white">
-            {activeOwner ? `Guardian Hub: ${activeOwner.fullName}` : "Guardian Portal & Account Gateway"}
+            {activeOwner ? `Guardian: ${activeOwner.fullName}` : "Guardian Portal & Account Gateway"}
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            {activeOwner 
+            {activeOwner
               ? "Manage private guardian security details, register attached pet passports, and update clinical logs seamlessly."
               : "Access your private repository to review or update your domestic animals and official clinical travel passports."}
           </p>
@@ -263,7 +263,7 @@ function GuardianPortalContent() {
       {/* VIEW A: UNAUTHENTICATED INTAKE / LOGIN FLOW */}
       {!activeOwner ? (
         <div className="max-w-xl mx-auto w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 lg:p-10 shadow-2xl mt-8 text-center space-y-6 animate-fade-in relative overflow-hidden">
-          
+
           {/* Subtle Accent Glow */}
           <div className="absolute -top-24 -left-24 w-48 h-48 bg-orange-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
@@ -300,17 +300,16 @@ function GuardianPortalContent() {
 
         </div>
       ) : (
-        
+
         /* VIEW B: AUTHENTICATED GUARDIAN WORKSPACE */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start animate-fade-in">
-          
+
           {/* COLUMN 1: GUARDIAN ACCOUNT CONFIGURATIONS */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
             <div className="pb-3 border-b border-slate-800">
               <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-                My Guardian Credentials
+                Guardian Credentials
               </h2>
-              <p className="text-xs text-slate-500">Update dynamic personal proxies and travel signatures</p>
             </div>
 
             {profileSuccessMsg && (
@@ -382,11 +381,11 @@ function GuardianPortalContent() {
               </div>
 
               <div className="pt-2 border-t border-slate-800 space-y-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Emergency Custom Proxy</span>
-                
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Emergency Contact</span>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[9px] text-slate-500 uppercase mb-0.5">Proxy Name</label>
+                    <label className="block text-[9px] text-slate-500 uppercase mb-0.5">Name</label>
                     <input
                       type="text"
                       placeholder="Name"
@@ -396,10 +395,10 @@ function GuardianPortalContent() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] text-slate-500 uppercase mb-0.5">Proxy Phone</label>
+                    <label className="block text-[9px] text-slate-500 uppercase mb-0.5">Contact Number</label>
                     <input
                       type="text"
-                      placeholder="Phone"
+                      placeholder="Contact Number"
                       value={ownerProfileData.emergencyContactPhone}
                       onChange={(e) => setOwnerProfileData({ ...ownerProfileData, emergencyContactPhone: e.target.value })}
                       className="w-full px-2 py-1 bg-slate-950 border border-slate-800 rounded text-slate-200 text-xs"
@@ -413,24 +412,24 @@ function GuardianPortalContent() {
                 disabled={updateOwnerLoading}
                 className="w-full py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs transition-all shadow mt-4"
               >
-                {updateOwnerLoading ? "Persisting Updates..." : "Save Account Attributes"}
+                {updateOwnerLoading ? "Persisting Updates..." : "Save Account"}
               </button>
             </form>
           </div>
 
           {/* COLUMN 2 & 3: ROSTER OF MY REGISTERED PETS */}
           <div className="lg:col-span-2 space-y-6">
-            
+
             {/* Action Bar Header */}
             <div className="bg-gradient-to-r from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <span>Attached Domestic Roster</span>
+                  <span>Enter your pets information here</span>
                   <span className="text-xs font-mono font-normal text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
                     {activeOwner.pets?.length || 0} Passports
                   </span>
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">A Guardian segment can allocate one or multiple domestic companion partitions dynamically.</p>
+                <p className="text-xs text-slate-400 mt-0.5"> </p>
               </div>
 
               <button
@@ -448,7 +447,7 @@ function GuardianPortalContent() {
                 <div className="pb-3 border-b border-slate-900 flex items-center justify-between">
                   <div>
                     <span className="font-bold text-orange-400 text-sm block">PET INFORMATION</span>
-                    <span className="text-[10px] text-slate-500">Official registry intake mapping biometric parameters</span>
+                    <span className="text-[10px] text-slate-500">Official registry your pets informations</span>
                   </div>
                   <span className="text-[10px] font-mono text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-800">
                     Pet Photo Box (4cm x 4cm)
@@ -457,7 +456,7 @@ function GuardianPortalContent() {
 
                 {/* SIDE-BY-SIDE MATRIX LAYOUT */}
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
-                  
+
                   {/* Left Side: Field Input Grid (3 cols span) */}
                   <div className="md:col-span-3 space-y-3">
                     <div className="grid grid-cols-3 items-center pb-1 border-b border-slate-900 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -594,7 +593,7 @@ function GuardianPortalContent() {
                     disabled={addPetLoading}
                     className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-bold text-xs tracking-wider transition-all shadow-lg"
                   >
-                    {addPetLoading ? "Binding Partition Storage..." : "Confirm & Save Companion Record"}
+                    {addPetLoading ? "Binding Partition Storage..." : "Confirm"}
                   </button>
                 </div>
               </form>
@@ -602,15 +601,15 @@ function GuardianPortalContent() {
 
             {/* CARD LIST RENDERING: SHOWING EACH AS VIEW, UPDATE, DELETE */}
             {!activeOwner.pets || activeOwner.pets.length === 0 ? (
-              <div className="p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-xs text-slate-500 space-y-3">
+              <div className="p-12 rounded-2xl bg-slate-900 border border-slate-800 text-center text-xs text-slate-400 space-y-3">
                 <div className="text-3xl">🐾</div>
-                <p>No added pets registered below. An owner can track one or multiple companions. Add your target using the trigger above.</p>
+                <p>No added pets registered below. An owner can track one or multiple companions. Add your pets to track them.</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {activeOwner.pets.map((pet: any) => {
                   const isEditing = editingPetId === pet.id;
-                  
+
                   // LIVE UPDATE MODE EMBED: DUAL LAYOUT VIEW FOR EDITING PICTURE BOX TOO
                   if (isEditing) {
                     return (
@@ -635,7 +634,7 @@ function GuardianPortalContent() {
 
                         {/* Side-by-side editing columns */}
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
-                          
+
                           {/* Left Parameters */}
                           <div className="md:col-span-3 space-y-3">
                             <div className="grid grid-cols-3 items-center gap-2">
@@ -777,7 +776,7 @@ function GuardianPortalContent() {
                       className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-3xl p-6 transition-all shadow-xl flex flex-col gap-5 group"
                     >
                       <div className="flex flex-col sm:flex-row items-start gap-5">
-                        
+
                         {/* Img frame square on the left */}
                         <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0 relative group-hover:border-orange-500/40 transition-all shadow-md flex items-center justify-center self-center sm:self-auto">
                           {(pet.photoUrl || pet.image) ? (
@@ -891,7 +890,7 @@ export default function GuardianPortalPage() {
   return (
     <Suspense fallback={
       <div className="flex-1 flex items-center justify-center p-12 text-slate-500 font-mono text-xs animate-pulse">
-        Mounting Synchronized Guardian Platform Console...
+        loading ....
       </div>
     }>
       <GuardianPortalContent />

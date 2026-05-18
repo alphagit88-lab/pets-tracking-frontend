@@ -87,7 +87,7 @@ export default function ClinicsPage() {
     <div className="w-full max-w-[1720px] mx-auto py-10 px-6 flex-1 flex flex-col gap-8">
       
       {/* Title Showcase Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/40 p-6 rounded-2xl border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-xl">
         <div>
           <div className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-1">
             Certified Facilities Management
@@ -212,11 +212,11 @@ export default function ClinicsPage() {
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-44 bg-slate-900/40 rounded-2xl animate-pulse border border-slate-800"></div>
+              <div key={i} className="h-44 bg-slate-900 rounded-2xl animate-pulse border border-slate-800"></div>
             ))}
           </div>
         ) : clinics.length === 0 ? (
-          <div className="text-center py-16 bg-slate-900/20 rounded-2xl border-2 border-dashed border-slate-800 text-slate-500 text-xs">
+          <div className="text-center py-16 bg-slate-900 rounded-2xl border border-slate-800 text-slate-400 text-xs">
             No certified clinical center hubs persisted in runtime registries. Use the accreditation button above to start logging.
           </div>
         ) : (
