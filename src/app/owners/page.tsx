@@ -106,21 +106,42 @@ function GuardianPortalContent() {
     }
   }
 
+  // Dedicated upload state to show upload progress in the UI
+  const [photoUploading, setPhotoUploading] = useState(false);
+
   // File Uploader conversion utility for pictures
-  function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>, isEditMode: boolean) {
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>, isEditMode: boolean) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Str = reader.result as string;
-      if (isEditMode) {
-        setEditPetFormData(prev => ({ ...prev, photoUrl: base64Str, image: base64Str }));
-      } else {
-        setNewPetData(prev => ({ ...prev, photoUrl: base64Str, image: base64Str }));
+    setPhotoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("File upload failed");
       }
-    };
-    reader.readAsDataURL(file);
+
+      const blob = await response.json();
+      const fileUrl = blob.url;
+
+      if (isEditMode) {
+        setEditPetFormData(prev => ({ ...prev, photoUrl: fileUrl, image: fileUrl }));
+      } else {
+        setNewPetData(prev => ({ ...prev, photoUrl: fileUrl, image: fileUrl }));
+      }
+    } catch (err) {
+      console.error("Vercel Blob upload failed:", err);
+      alert("Failed to upload image. Please try again.");
+    } finally {
+      setPhotoUploading(false);
+    }
   }
 
   function handleLogout() {
@@ -552,7 +573,11 @@ function GuardianPortalContent() {
                     </label>
 
                     <div className="relative w-40 h-40 rounded-2xl border-2 border-dashed border-slate-700 bg-slate-900 hover:border-orange-500 transition-all flex flex-col items-center justify-center cursor-pointer group overflow-hidden shadow-inner">
-                      {newPetData.photoUrl ? (
+                      {photoUploading ? (
+                        <div className="text-center p-3 text-orange-400 animate-pulse font-mono text-[10px]">
+                          ⚡ Uploading...
+                        </div>
+                      ) : newPetData.photoUrl ? (
                         <img
                           src={newPetData.photoUrl}
                           alt="Pet Preview"
@@ -569,8 +594,9 @@ function GuardianPortalContent() {
                       <input
                         type="file"
                         accept="image/*"
+                        disabled={photoUploading}
                         onChange={(e) => handlePhotoUpload(e, false)}
-                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
                       />
                     </div>
 
@@ -722,7 +748,11 @@ function GuardianPortalContent() {
                             </label>
 
                             <div className="relative w-36 h-36 rounded-2xl border-2 border-dashed border-sky-500/40 bg-slate-900 hover:border-sky-500 transition-all flex flex-col items-center justify-center cursor-pointer group overflow-hidden shadow-inner">
-                              {editPetFormData.photoUrl ? (
+                              {photoUploading ? (
+                                <div className="text-center p-2 text-sky-400 animate-pulse font-mono text-[9px]">
+                                  ⚡ Uploading...
+                                </div>
+                              ) : editPetFormData.photoUrl ? (
                                 <img
                                   src={editPetFormData.photoUrl}
                                   alt="Pet Preview"
@@ -738,8 +768,9 @@ function GuardianPortalContent() {
                               <input
                                 type="file"
                                 accept="image/*"
+                                disabled={photoUploading}
                                 onChange={(e) => handlePhotoUpload(e, true)}
-                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
                               />
                             </div>
 
