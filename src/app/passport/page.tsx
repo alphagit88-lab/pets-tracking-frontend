@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "../../lib/axios";
 
@@ -27,13 +27,63 @@ function PassportBookletContent() {
   const searchParams = useSearchParams();
   const initialPetId = searchParams.get("petId");
   
-  const [petList, setPetList] = useState<any[]>([]);
-  const [selectedPet, setSelectedPet] = useState<any | null>(null);
+  const [petList, setPetList] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("titan_core_cached_pet_list");
+      if (cached) {
+        try { return JSON.parse(cached); } catch (e) { return []; }
+      }
+    }
+    return [];
+  });
+  const [selectedPet, setSelectedPet] = useState<any | null>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("titan_core_cached_active_pet");
+      if (cached) {
+        try { return JSON.parse(cached); } catch (e) { return null; }
+      }
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"cover" | "microchip" | "vaccines" | "medical">("cover");
 
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleCloseDropdown = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleCloseDropdown);
+    return () => document.removeEventListener("mousedown", handleCloseDropdown);
+  }, []);
+
+  useEffect(() => {
+    if (selectedPet) {
+      localStorage.setItem("titan_core_cached_active_pet", JSON.stringify(selectedPet));
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("petId") !== selectedPet.id) {
+          url.searchParams.set("petId", selectedPet.id);
+          window.history.replaceState(null, "", url.toString());
+        }
+      }
+    }
+  }, [selectedPet]);
+
   // Dynamic live clinical registry states
-  const [vaccinations, setVaccinations] = useState<any[]>([]);
+  const [vaccinations, setVaccinations] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("titan_core_cached_vaccinations");
+      if (cached) {
+        try { return JSON.parse(cached); } catch (e) { return []; }
+      }
+    }
+    return [];
+  });
   const [clinics, setClinics] = useState<any[]>([]);
   const [showVacForm, setShowVacForm] = useState(false);
   const [editingVacId, setEditingVacId] = useState<string | null>(null);
@@ -73,25 +123,71 @@ function PassportBookletContent() {
   useEffect(() => {
     async function loadPets() {
       try {
-        const res = await api.get("/search?q=");
-        const fetchedPets = res.data?.pets || [];
-        setPetList(fetchedPets);
+        let fetchedPets: any[] = [];
+        let specificPet: any = null;
 
-        // Map selection priority: Param ID -> First Pet -> Null
-        if (initialPetId) {
-          const match = fetchedPets.find((p: any) => p.id === initialPetId);
-          if (match) {
-            setSelectedPet(match);
-          } else if (fetchedPets.length > 0) {
-            setSelectedPet(fetchedPets[0]);
-          }
-        } else if (fetchedPets.length > 0) {
-          setSelectedPet(fetchedPets[0]);
+        const cachedEmail = typeof window !== "undefined" ? localStorage.getItem("titan_core_active_owner_email") : null;
+
+        // 1. Fetch direct target pet, owner session restore, and clinics list concurrently (Turbo Performance!)
+        const [petRes, restoreRes, clinRes] = await Promise.all([
+          initialPetId ? api.get(`/pets/${initialPetId}`).catch(() => null) : null,
+          cachedEmail ? api.post("/owners/restore", { email: cachedEmail }).catch(() => null) : null,
+          api.get("/clinics").catch(() => null)
+        ]);
+
+        if (petRes?.data) {
+          specificPet = petRes.data;
         }
 
-        // Preload clinics dropdown array
-        const clinRes = await api.get("/clinics");
-        setClinics(clinRes.data || []);
+        if (clinRes?.data) {
+          setClinics(clinRes.data || []);
+        }
+
+        // 2. Fetch owner's pets if restore succeeded
+        if (restoreRes?.data?.id) {
+          try {
+            const res = await api.get(`/owners/${restoreRes.data.id}/pets`);
+            fetchedPets = res.data || [];
+          } catch (sessionErr) {
+            console.error("Failed fetching owner pets:", sessionErr);
+          }
+        }
+
+        // 3. Fallback: If pet list is still empty, fetch globally
+        if (fetchedPets.length === 0) {
+          try {
+            const searchRes = await api.get("/search?q=");
+            fetchedPets = searchRes.data?.pets || [];
+          } catch (searchErr) {
+            console.error("Fallback search failed:", searchErr);
+          }
+        }
+
+        // 4. Merge specificPet into the petList if it is not already present
+        if (specificPet) {
+          const exists = fetchedPets.some((p: any) => p.id === specificPet.id);
+          if (!exists) {
+            fetchedPets = [specificPet, ...fetchedPets];
+          }
+        }
+
+        setPetList(fetchedPets);
+        localStorage.setItem("titan_core_cached_pet_list", JSON.stringify(fetchedPets));
+
+        // 5. Select active pet: specificPet (Param ID) -> First Pet in List -> Null
+        let activePetToSet = null;
+        if (specificPet) {
+          activePetToSet = specificPet;
+        } else if (fetchedPets.length > 0) {
+          activePetToSet = fetchedPets[0];
+        }
+
+        setSelectedPet(activePetToSet);
+        if (activePetToSet) {
+          localStorage.setItem("titan_core_cached_active_pet", JSON.stringify(activePetToSet));
+        } else {
+          localStorage.removeItem("titan_core_cached_active_pet");
+        }
       } catch (err) {
         console.error("Failed loading passport registries:", err);
       } finally {
@@ -133,6 +229,7 @@ function PassportBookletContent() {
     try {
       const res = await api.get(`/pets/${petId}/vaccinations`);
       setVaccinations(res.data || []);
+      localStorage.setItem("titan_core_cached_vaccinations", JSON.stringify(res.data || []));
     } catch (err) {
       console.error("Failed fetching live pet vaccinations:", err);
     }
@@ -318,78 +415,56 @@ function PassportBookletContent() {
   }
 
   return (
-    <div className="w-full max-w-[1720px] mx-auto py-10 px-6 flex-1 flex flex-col lg:flex-row gap-8">
+    <div className="w-full max-w-[1720px] mx-auto py-10 px-6 flex-1 flex flex-col gap-6">
       
-      {/* Sidebar Navigation Selector: Digital Passport File System */}
-      <div className="w-full lg:w-80 flex flex-col gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-          <div className="text-xs uppercase tracking-widest font-bold text-slate-400 mb-4 flex items-center justify-between">
-            <span>Available Passports</span>
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-orange-400 font-mono text-[10px]">
-              {petList.length} Active
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="space-y-3">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-12 bg-slate-800/40 rounded-xl animate-pulse"></div>
-              ))}
-            </div>
-          ) : petList.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-500">
-              No digital passport signatures fully committed.
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-              {petList.map((pet) => {
-                const isSelected = selectedPet?.id === pet.id;
-                return (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full text-left p-3 rounded-xl transition-all duration-200 border flex items-center gap-3 ${
-                      isSelected
-                        ? "bg-gradient-to-r from-orange-500/10 to-amber-500/5 border-orange-500/40 text-white shadow-md shadow-orange-500/5"
-                        : "bg-slate-950/40 border-slate-800/80 hover:bg-slate-800/40 text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                      isSelected ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-400"
-                    }`}>
-                      {pet.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm truncate">{pet.name}</div>
-                      <div className="text-[10px] text-slate-500 truncate">
-                        {pet.species} • {pet.breed || "Hybrid"}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Informative Security Seal Box */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-5 text-xs text-slate-400 space-y-2">
-          <div className="font-bold text-slate-200 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-            <span>Document Layout Replicas</span>
-          </div>
-          <p className="leading-relaxed">
-            Rendered perfectly mirroring physical custom booklet assets (`pet Passport.pdf`) embedded with core photo markers, ISO tags, and continuous validation stamp placeholders.
-          </p>
-        </div>
-      </div>
-
       {/* Main Content Area: Tabbed Digital Booklet View */}
       <div className="flex-1 flex flex-col gap-6">
         
+        {loading && !selectedPet ? (
+          <div className="flex-1 flex flex-col gap-6 animate-pulse">
+            {/* Skeleton Tab Header */}
+            <div className="h-14 bg-slate-900/40 rounded-2xl border border-slate-800/80 flex items-center justify-between px-4">
+              <div className="flex gap-2">
+                <div className="w-24 h-8 bg-slate-800/60 rounded-xl"></div>
+                <div className="w-24 h-8 bg-slate-800/60 rounded-xl"></div>
+                <div className="w-24 h-8 bg-slate-800/60 rounded-xl"></div>
+              </div>
+              <div className="w-32 h-8 bg-slate-800/60 rounded-xl"></div>
+            </div>
+            {/* Skeleton Booklet Canvas */}
+            <div className="flex-1 bg-slate-900 border border-slate-800 rounded-3xl min-h-[700px] grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-800 overflow-hidden">
+              <div className="p-8 flex flex-col justify-between items-center bg-slate-950/40">
+                <div className="w-16 h-16 bg-slate-800/60 rounded-2xl"></div>
+                <div className="space-y-3 my-10 w-full max-w-xs items-center flex flex-col">
+                  <div className="w-32 h-8 bg-slate-800/60 rounded-lg"></div>
+                  <div className="w-48 h-6 bg-slate-800/60 rounded-lg"></div>
+                </div>
+                <div className="w-full max-w-xs h-24 bg-slate-800/60 rounded-2xl"></div>
+              </div>
+              <div className="p-8 space-y-6">
+                <div className="flex justify-between items-center">
+                  <div className="space-y-2">
+                    <div className="w-24 h-4 bg-slate-800/60 rounded"></div>
+                    <div className="w-32 h-6 bg-slate-800/60 rounded"></div>
+                  </div>
+                  <div className="w-24 h-24 bg-slate-800/60 rounded-2xl"></div>
+                </div>
+                <div className="space-y-4 pt-4">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="flex justify-between border-b border-slate-800 pb-2">
+                      <div className="w-20 h-4 bg-slate-800/60 rounded"></div>
+                      <div className="w-40 h-4 bg-slate-800/60 rounded"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Booklet Controls Tab Header */}
         {selectedPet && (
-          <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-2 rounded-2xl border border-slate-800 backdrop-blur-sm">
+          <div className="relative z-30 flex flex-wrap items-center justify-between gap-4 bg-slate-900/60 p-2 rounded-2xl border border-slate-800 backdrop-blur-sm">
             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
               <button
                 onClick={() => setActiveTab("cover")}
@@ -433,9 +508,85 @@ function PassportBookletContent() {
               </button>
             </div>
 
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-950 text-slate-400 border border-slate-800/80 text-xs font-mono">
-              <span>Booklet ID:</span>
-              <span className="text-slate-200 font-bold">{selectedPet.id.split("-")[0]}</span>
+            {/* Booklet ID & Active Pet Selector Group */}
+            <div className="flex items-center gap-3">
+              {/* Booklet ID Pill */}
+              <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-950/60 text-slate-400 border border-slate-800/80 text-[10px] font-mono">
+                <span>Booklet:</span>
+                <span className="text-slate-200 font-bold uppercase">{selectedPet.id.split("-")[0]}</span>
+              </div>
+
+              {/* Modern Pet Dropdown Selector */}
+              <div ref={dropdownRef} className="relative">
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-orange-500/40 rounded-xl transition-all duration-200 text-left focus:outline-none"
+                >
+                  {selectedPet.photoUrl || selectedPet.photoImage ? (
+                    <img
+                      src={selectedPet.photoUrl || selectedPet.photoImage}
+                      alt={selectedPet.name}
+                      className="w-4 h-4 rounded object-cover border border-slate-800/80 mr-1.5"
+                    />
+                  ) : (
+                    <div className="w-4 h-4 rounded bg-orange-500 flex items-center justify-center text-[9px] font-bold text-white uppercase mr-1.5">
+                      {selectedPet.name.charAt(0)}
+                    </div>
+                  )}
+                  <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1">
+                    <span>{selectedPet.name}</span>
+                    <span className="text-[7px] text-slate-500">▼</span>
+                  </span>
+                </button>
+
+                {/* Dropdown Menu */}
+                {dropdownOpen && (
+                  <div className="absolute top-full right-0 mt-1.5 w-48 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 divide-y divide-slate-900">
+                    <div className="px-3 py-1 bg-slate-900/60 text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                      Switch Passport
+                    </div>
+                    <div className="max-h-48 overflow-y-auto p-1 space-y-0.5">
+                      {petList.map((pet) => {
+                        const isSelected = pet.id === selectedPet.id;
+                        return (
+                          <button
+                            key={pet.id}
+                            onClick={() => {
+                              setSelectedPet(pet);
+                              setDropdownOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-2 p-1.5 rounded-lg transition-all border border-transparent text-left ${
+                              isSelected
+                                ? "bg-orange-500/10 text-orange-400 font-bold border-orange-500/20"
+                                : "hover:bg-slate-900/80 text-slate-400 hover:text-slate-200"
+                            }`}
+                          >
+                            {pet.photoUrl || pet.photoImage ? (
+                              <img
+                                src={pet.photoUrl || pet.photoImage}
+                                alt={pet.name}
+                                className="w-4 h-4 rounded object-cover"
+                              />
+                            ) : (
+                              <div className={`w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold ${
+                                isSelected ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-400"
+                              }`}>
+                                {pet.name.charAt(0)}
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[11px] truncate font-bold">{pet.name}</div>
+                              <div className="text-[7px] text-slate-500 truncate capitalize">
+                                {pet.species} • {pet.breed || "Hybrid"}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -536,12 +687,24 @@ function PassportBookletContent() {
                         </div>
 
                         {/* Pet Photo Box (4cm x 4cm corresponding logic) */}
-                        <div className="w-24 h-24 rounded-2xl bg-slate-950 border-2 border-dashed border-slate-700 flex flex-col items-center justify-center p-2 text-center text-slate-500 group relative">
-                          <span className="text-xs font-bold text-slate-600">4cm x 4cm</span>
-                          <span className="text-[9px] text-slate-600">Photo Box</span>
-                          <div className="absolute inset-0 flex items-center justify-center font-black text-3xl text-slate-800/40 select-none">
-                            {selectedPet.name.charAt(0)}
-                          </div>
+                        <div className="w-24 h-24 rounded-2xl bg-slate-950 border-2 border-dashed border-slate-700 flex flex-col items-center justify-center overflow-hidden text-center text-slate-500 group relative">
+                          {selectedPet.photoUrl || selectedPet.photoImage ? (
+                            <img
+                              src={selectedPet.photoUrl || selectedPet.photoImage}
+                              alt={selectedPet.name}
+                              className="w-full h-full object-cover"
+                              fetchPriority="high"
+                              loading="eager"
+                            />
+                          ) : (
+                            <>
+                              <span className="text-xs font-bold text-slate-600">4cm x 4cm</span>
+                              <span className="text-[9px] text-slate-600">Photo Box</span>
+                              <div className="absolute inset-0 flex items-center justify-center font-black text-3xl text-slate-800/40 select-none">
+                                {selectedPet.name.charAt(0)}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -640,293 +803,429 @@ function PassportBookletContent() {
                 </div>
               )}
 
-              {/* TAB 2: MICROCHIP & VETERINARY SIGNATURES (PDF Page 3) */}
+              {/* TAB 2: MICROCHIP & VETERINARY SIGNATURES (PDF Page 3 & 4 Replica) */}
               {activeTab === "microchip" && (
-                <div className="flex-1 p-8 lg:p-12 overflow-y-auto max-h-[700px]">
-                  <div className="max-w-5xl mx-auto space-y-12">
+                <div className="flex-1 p-6 lg:p-8 overflow-y-auto max-h-[700px] bg-slate-900/40">
+                  <div className="max-w-6xl mx-auto space-y-8">
                     
-                    {/* --- 1. MICROCHIP RECORD SEGMENT FORM --- */}
-                    <form onSubmit={handleSaveMicrochip} className="space-y-6">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-                        <div>
-                          <div className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-1">
-                            ISO Verification Array
-                          </div>
-                          <h3 className="text-xl font-extrabold text-white">MICROCHIP RECORD</h3>
-                          <p className="text-xs text-slate-400">Configure core 15-digit sub-dermal scanner tags and visual sticker verification documents.</p>
-                        </div>
-                        <button
-                          type="submit"
-                          disabled={microchipSaving}
-                          className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-600/10 self-start sm:self-auto"
-                        >
-                          {microchipSaving ? "Committing Tag..." : "Save Microchip Settings"}
-                        </button>
-                      </div>
+                    {/* --- DUAL-PAGE PASSPORT BOOKLET REPLICA (PAGES 3 & 4) --- */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800 border border-slate-800 rounded-2xl bg-gradient-to-b from-slate-900/90 via-slate-950/90 to-slate-950/90 overflow-hidden shadow-2xl">
+                      
+                      {/* PAGE 3: MICROCHIP RECORD REPLICA */}
+                      <div className="p-6 lg:p-8 flex flex-col justify-between min-h-[420px] relative">
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600"></div>
+                        <div className="absolute -left-24 -top-24 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+                        <div className="space-y-6">
+                          <div className="text-center pb-3 border-b border-slate-900">
+                            <h3 className="text-sm font-extrabold text-white tracking-widest font-sans uppercase">MICROCHIP RECORD</h3>
+                            <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">Official Implant Registration</p>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                            {/* Left: Fields List */}
+                            <div className="md:col-span-2 space-y-4 text-[11px] font-mono">
+                              <div className="flex justify-between items-end border-b border-slate-900 pb-1">
+                                <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Field</span>
+                                <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Details</span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Microchip No (15 digits)</span>
+                                <span className="font-bold text-emerald-400 text-right truncate pl-2 selection:bg-emerald-500/20">
+                                  {microchipFormData.microchipNo || "_______________"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">ISO Standard</span>
+                                <span className="font-bold text-slate-200 text-right truncate pl-2">
+                                  {microchipFormData.isoStandard || "11784/11785"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Implant Date</span>
+                                <span className="font-bold text-slate-200 text-right shrink-0">
+                                  {microchipFormData.implantDate ? new Date(microchipFormData.implantDate).toLocaleDateString() : "//20__"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Implant Location</span>
+                                <span className="font-bold text-slate-200 text-right truncate pl-2">
+                                  {microchipFormData.implantLocation || "Neck/Shoulder"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Vet/Clinic</span>
+                                <span className="font-bold text-slate-200 text-right truncate pl-2">
+                                  {microchipFormData.vetClinicName || "_______________"}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Right: Sticker Box Container */}
+                            <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex flex-col justify-between items-center text-center h-[220px] w-full relative overflow-hidden group shadow-inner">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Picture of microchip sticker</span>
+                              
+                              <div className="my-auto w-full flex items-center justify-center">
+                                {microchipFormData.stickerUrl ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element */
+                                  <img
+                                    src={microchipFormData.stickerUrl}
+                                    alt="Microchip Barcode Sticker Asset"
+                                    className="max-h-28 object-contain rounded-lg border border-slate-800 shadow-md group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                ) : (
+                                  <div className="opacity-30 group-hover:opacity-50 transition-opacity">
+                                    <MicrochipStickerIcon />
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-[8px] text-slate-600 block mt-2 tracking-wide">Secure Barcode Tag</span>
+                            </div>
+                          </div>
+                        </div>
                         
-                        {/* Left Side: Standard Field Details */}
-                        <div className="space-y-4 bg-slate-950/60 p-5 rounded-2xl border border-slate-800/80">
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Microchip No (15 digits) *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="e.g. 981022300092112"
-                              value={microchipFormData.microchipNo}
-                              onChange={e => setMicrochipFormData({ ...microchipFormData, microchipNo: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-emerald-400 font-mono font-bold text-xs focus:outline-none focus:border-emerald-500 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              ISO Standard
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="11784/11785"
-                              value={microchipFormData.isoStandard}
-                              onChange={e => setMicrochipFormData({ ...microchipFormData, isoStandard: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Implant Date
-                            </label>
-                            <input
-                              type="date"
-                              value={microchipFormData.implantDate}
-                              onChange={e => setMicrochipFormData({ ...microchipFormData, implantDate: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Implant Location
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Neck/Shoulder"
-                              value={microchipFormData.implantLocation}
-                              onChange={e => setMicrochipFormData({ ...microchipFormData, implantLocation: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Vet/Clinic
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Facility Name"
-                              value={microchipFormData.vetClinicName}
-                              onChange={e => setMicrochipFormData({ ...microchipFormData, vetClinicName: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
+                        <div className="mt-8 pt-3 border-t border-slate-900 flex items-center justify-between text-[9px] text-slate-500 font-mono">
+                          <span>TC-MICRO-REG</span>
+                          <span>PAGE 03</span>
                         </div>
-
-                        {/* Right Side: Interactive Drag/Upload base64 Sticker Dropzone */}
-                        <div className="bg-slate-950 p-6 rounded-2xl border-2 border-dashed border-slate-700 flex flex-col justify-between h-full min-h-[260px] relative group overflow-hidden">
-                          <div className="text-xs font-bold text-slate-300 uppercase tracking-widest text-center">
-                            Picture of microchip sticker
-                          </div>
-
-                          <div className="my-auto py-2 flex flex-col items-center justify-center w-full">
-                            {uploadingSticker ? (
-                              <div className="text-center p-3 text-emerald-400 animate-pulse font-mono text-[10px]">
-                                ⚡ Uploading to Vercel Blob...
-                              </div>
-                            ) : microchipFormData.stickerUrl ? (
-                              <div className="relative w-full max-h-40 flex justify-center">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={microchipFormData.stickerUrl}
-                                  alt="Microchip Barcode Sticker Asset"
-                                  className="max-h-36 object-contain rounded-lg border border-slate-800 shadow"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setMicrochipFormData({ ...microchipFormData, stickerUrl: "" })}
-                                  className="absolute top-1 right-1 bg-slate-900/90 text-red-400 hover:text-red-300 p-1 rounded-md text-[10px]"
-                                >
-                                  ✕ Remove
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="w-full py-2 pointer-events-none opacity-60 group-hover:opacity-100 transition-opacity">
-                                <MicrochipStickerIcon />
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="mt-auto pt-2 border-t border-slate-900 text-center">
-                            <label className="cursor-pointer inline-block px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 font-mono text-[10px] transition-colors border border-slate-800">
-                              <span>📁 Select Barcode Image File</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                disabled={uploadingSticker}
-                                onChange={handleStickerUpload}
-                                className="hidden"
-                              />
-                            </label>
-                          </div>
-                        </div>
-
                       </div>
-                    </form>
+                      
+                      {/* PAGE 4: REGISTERED VETERINARY DETAILS REPLICA */}
+                      <div className="p-6 lg:p-8 flex flex-col justify-between min-h-[420px] relative">
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600"></div>
+                        <div className="absolute -right-24 -top-24 w-48 h-48 bg-sky-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-
-                    {/* --- 2. REGISTERED VETERINARY DETAILS FORM --- */}
-                    <form onSubmit={handleSaveClinic} className="pt-10 border-t border-slate-800 space-y-6">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-                        <div>
-                          <div className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-1">
-                            Accredited Operations
+                        <div className="space-y-6">
+                          <div className="text-center pb-3 border-b border-slate-900">
+                            <h3 className="text-sm font-extrabold text-white tracking-widest font-sans uppercase">REGISTERED VETERINARY DETAILS</h3>
+                            <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">Accredited Medical Personnel</p>
                           </div>
-                          <h3 className="text-xl font-extrabold text-white">REGISTERED VETERINARY DETAILS</h3>
-                          <p className="text-xs text-slate-400">Map operational clinic credentials and official physical ink seal images.</p>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                            {/* Left: Fields List */}
+                            <div className="md:col-span-2 space-y-4 text-[11px] font-mono">
+                              <div className="flex justify-between items-end border-b border-slate-900 pb-1">
+                                <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Field</span>
+                                <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Details</span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Clinic Name</span>
+                                <span className="font-bold text-sky-400 text-right truncate pl-2">
+                                  {clinicFormData.clinicName || "_______________"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Veterinarian</span>
+                                <span className="font-bold text-slate-200 text-right truncate pl-2">
+                                  {clinicFormData.veterinarianName || "_______________"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">License No</span>
+                                <span className="font-bold text-slate-200 text-right truncate pl-2">
+                                  {clinicFormData.licenseNo || "_______________"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Address</span>
+                                <span className="font-bold text-slate-200 text-right truncate pl-2">
+                                  {clinicFormData.address || "_______________"}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-end border-b border-slate-900/60 pb-1.5">
+                                <span className="text-slate-500 font-medium">Contact</span>
+                                <span className="font-bold text-slate-200 text-right truncate pl-2">
+                                  {clinicFormData.contact || "_______________"}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Right: Vet Seal Box */}
+                            <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 flex flex-col justify-between items-center text-center h-[220px] w-full relative overflow-hidden group shadow-inner">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Vet Seal Picture</span>
+                              
+                              <div className="my-auto w-full flex items-center justify-center">
+                                {clinicFormData.sealUrl ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element */
+                                  <img
+                                    src={clinicFormData.sealUrl}
+                                    alt="Accredited Veterinary Stamp Seal"
+                                    className="max-h-28 object-contain rounded-lg border border-slate-800 shadow-md group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                ) : (
+                                  <div className="opacity-30 group-hover:opacity-50 transition-opacity">
+                                    <StampIcon />
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-[8px] text-slate-600 block mt-2 tracking-wide">Accredited Endorsement</span>
+                            </div>
+                          </div>
                         </div>
-                        <button
-                          type="submit"
-                          disabled={clinicSaving}
-                          className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-lg shadow-sky-600/10 self-start sm:self-auto"
-                        >
-                          {clinicSaving ? "Persisting Registry..." : "Save Veterinary Details"}
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
                         
-                        {/* Left Side: Standard Registry Metadata */}
-                        <div className="space-y-4 bg-slate-950/60 p-5 rounded-2xl border border-slate-800/80">
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Clinic Name *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="e.g. Titan Core Veterinary Hospital"
-                              value={clinicFormData.clinicName}
-                              onChange={e => setClinicFormData({ ...clinicFormData, clinicName: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sky-400 font-bold text-xs focus:outline-none focus:border-sky-500 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Veterinarian *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="Dr. Full Name"
-                              value={clinicFormData.veterinarianName}
-                              onChange={e => setClinicFormData({ ...clinicFormData, veterinarianName: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              License No
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="VET-REG-XXXX"
-                              value={clinicFormData.licenseNo}
-                              onChange={e => setClinicFormData({ ...clinicFormData, licenseNo: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 font-mono text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Address
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Street Address, City"
-                              value={clinicFormData.address}
-                              onChange={e => setClinicFormData({ ...clinicFormData, address: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] text-slate-400 font-bold mb-1">
-                              Contact
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Phone / Email"
-                              value={clinicFormData.contact}
-                              onChange={e => setClinicFormData({ ...clinicFormData, contact: e.target.value })}
-                              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
-                            />
-                          </div>
+                        <div className="mt-8 pt-3 border-t border-slate-900 flex items-center justify-between text-[9px] text-slate-500 font-mono">
+                          <span>TC-VET-REG</span>
+                          <span>PAGE 04</span>
                         </div>
+                      </div>
+                    </div>
 
-                        {/* Right Side: Vet Seal Drag/Upload Picture dropzone canvas */}
-                        <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex flex-col justify-between h-full min-h-[260px] relative overflow-hidden group">
-                          <div className="text-xs font-bold text-slate-300 uppercase tracking-widest text-center">
-                            Vet Seal Picture
-                          </div>
+                    {/* --- ADMINISTRATIVE INPUT CONSOLE PANEL --- */}
+                    <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 lg:p-8 space-y-8 shadow-xl">
+                      <div className="border-b border-slate-800/80 pb-4">
+                        <h4 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                          <span className="text-orange-500">🛠️</span> Passport Registry Control Console
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Configure sub-dermal RFID chip metrics and update accredited practice endorsement files directly.
+                        </p>
+                      </div>
 
-                          <div className="my-auto py-2 flex flex-col items-center justify-center w-full">
-                            {uploadingSeal ? (
-                              <div className="text-center p-3 text-sky-400 animate-pulse font-mono text-[10px]">
-                                ⚡ Uploading to Vercel Blob...
-                              </div>
-                            ) : clinicFormData.sealUrl ? (
-                              <div className="relative w-full max-h-40 flex justify-center">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={clinicFormData.sealUrl}
-                                  alt="Accredited Veterinary Stamp Seal Asset"
-                                  className="max-h-36 object-contain rounded-lg border border-slate-800 shadow"
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                        
+                        {/* 1. MICROCHIP RECORD MANAGEMENT FORM */}
+                        <form onSubmit={handleSaveMicrochip} className="space-y-4 bg-slate-950/40 p-5 rounded-2xl border border-slate-800/60 flex flex-col justify-between min-h-[460px]">
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-900 pb-2">
+                              <span className="text-xs font-bold text-emerald-400 uppercase tracking-widest">ISO RFID Tag Configuration</span>
+                              <span className="text-[10px] text-slate-500 font-mono">Form 03-A</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="sm:col-span-2">
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Microchip No (15 digits) *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  maxLength={15}
+                                  placeholder="e.g. 981022300092112"
+                                  value={microchipFormData.microchipNo}
+                                  onChange={e => setMicrochipFormData({ ...microchipFormData, microchipNo: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono font-bold text-xs focus:outline-none focus:border-emerald-500 transition-colors focus:ring-1 focus:ring-emerald-500/20"
                                 />
-                                <button
-                                  type="button"
-                                  onClick={() => setClinicFormData({ ...clinicFormData, sealUrl: "" })}
-                                  className="absolute top-1 right-1 bg-slate-900/90 text-red-400 hover:text-red-300 p-1 rounded-md text-[10px]"
-                                >
-                                  ✕ Remove
-                                </button>
                               </div>
-                            ) : (
-                              <div className="w-full py-4 flex justify-center opacity-60 group-hover:opacity-100 transition-opacity">
-                                <StampIcon />
+
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  ISO Standard
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="11784/11785"
+                                  value={microchipFormData.isoStandard}
+                                  onChange={e => setMicrochipFormData({ ...microchipFormData, isoStandard: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
                               </div>
-                            )}
+
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Implant Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={microchipFormData.implantDate}
+                                  onChange={e => setMicrochipFormData({ ...microchipFormData, implantDate: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Implant Location
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Neck/Shoulder"
+                                  value={microchipFormData.implantLocation}
+                                  onChange={e => setMicrochipFormData({ ...microchipFormData, implantLocation: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Vet/Clinic Facility
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Facility Name"
+                                  value={microchipFormData.vetClinicName}
+                                  onChange={e => setMicrochipFormData({ ...microchipFormData, vetClinicName: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="pt-2">
+                              <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                Barcode Sticker Upload
+                              </label>
+                              <div className="flex items-center gap-3 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-emerald-400 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-colors border border-slate-800 flex-shrink-0">
+                                  <span>📁 Browse File</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={uploadingSticker}
+                                    onChange={handleStickerUpload}
+                                    className="hidden"
+                                  />
+                                </label>
+                                <div className="text-[9px] text-slate-500 truncate">
+                                  {uploadingSticker ? (
+                                    <span className="text-emerald-400 animate-pulse">⚡ Streaming to Vercel Blob...</span>
+                                  ) : microchipFormData.stickerUrl ? (
+                                    <span className="text-emerald-500 font-mono">✓ Sticker Linked</span>
+                                  ) : (
+                                    <span>Upload barcode scan image</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="mt-auto pt-2 border-t border-slate-900 text-center">
-                            <label className="cursor-pointer inline-block px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-sky-400 font-mono text-[10px] transition-colors border border-slate-800">
-                              <span>🖨️ Upload Stamp Seal Image</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                disabled={uploadingSeal}
-                                onChange={handleSealUpload}
-                                className="hidden"
-                              />
-                            </label>
+                          <div className="pt-4 mt-4 border-t border-slate-900">
+                            <button
+                              type="submit"
+                              disabled={microchipSaving}
+                              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-600/10"
+                            >
+                              {microchipSaving ? "Committing RFID Registry..." : "Save Microchip Settings"}
+                            </button>
                           </div>
-                        </div>
+                        </form>
+
+                        {/* 2. REGISTERED VETERINARY DETAILS FORM */}
+                        <form onSubmit={handleSaveClinic} className="space-y-4 bg-slate-950/40 p-5 rounded-2xl border border-slate-800/60 flex flex-col justify-between min-h-[460px]">
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-900 pb-2">
+                              <span className="text-xs font-bold text-sky-400 uppercase tracking-widest">Medical Personnel Registry</span>
+                              <span className="text-[10px] text-slate-500 font-mono">Form 03-B</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="sm:col-span-2">
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Clinic Name *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. Titan Core Veterinary Hospital"
+                                  value={clinicFormData.clinicName}
+                                  onChange={e => setClinicFormData({ ...clinicFormData, clinicName: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sky-400 font-bold text-xs focus:outline-none focus:border-sky-500 transition-colors focus:ring-1 focus:ring-sky-500/20"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Veterinarian Name *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="Dr. Full Name"
+                                  value={clinicFormData.veterinarianName}
+                                  onChange={e => setClinicFormData({ ...clinicFormData, veterinarianName: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  License No
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="VET-REG-XXXX"
+                                  value={clinicFormData.licenseNo}
+                                  onChange={e => setClinicFormData({ ...clinicFormData, licenseNo: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-mono text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Address
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Street Address, City"
+                                  value={clinicFormData.address}
+                                  onChange={e => setClinicFormData({ ...clinicFormData, address: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                  Contact
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Phone / Email"
+                                  value={clinicFormData.contact}
+                                  onChange={e => setClinicFormData({ ...clinicFormData, contact: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700 transition-colors"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="pt-2">
+                              <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+                                Vet Seal Image Upload
+                              </label>
+                              <div className="flex items-center gap-3 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                                <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-sky-400 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-colors border border-slate-800 flex-shrink-0">
+                                  <span>📁 Browse File</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={uploadingSeal}
+                                    onChange={handleSealUpload}
+                                    className="hidden"
+                                  />
+                                </label>
+                                <div className="text-[9px] text-slate-500 truncate">
+                                  {uploadingSeal ? (
+                                    <span className="text-sky-400 animate-pulse">⚡ Streaming to Vercel Blob...</span>
+                                  ) : clinicFormData.sealUrl ? (
+                                    <span className="text-sky-500 font-mono">✓ Seal Linked</span>
+                                  ) : (
+                                    <span>Upload digital seal stamp</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="pt-4 mt-4 border-t border-slate-900">
+                            <button
+                              type="submit"
+                              disabled={clinicSaving}
+                              className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-lg shadow-sky-600/10"
+                            >
+                              {clinicSaving ? "Persisting Registry..." : "Save Veterinary Details"}
+                            </button>
+                          </div>
+                        </form>
 
                       </div>
-                    </form>
+                    </div>
 
                   </div>
                 </div>
@@ -1250,6 +1549,9 @@ function PassportBookletContent() {
           )}
 
         </div>
+
+      </>
+    )}
 
       </div>
 
