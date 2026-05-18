@@ -83,7 +83,7 @@ function RegisterPageContent() {
           <h1 className="text-3xl font-black text-white tracking-tight">Register Guardian Workspace</h1>
           <div className="w-12 h-1 bg-emerald-500 mx-auto mt-2 rounded-full"></div>
           <p className="text-xs text-slate-300 mt-3 leading-relaxed">
-            Initialize your direct account signature to bind dynamic sub-passports and log active travel clearance maps.
+            Initialize your direct account signature.
           </p>
         </div>
 
@@ -95,11 +95,11 @@ function RegisterPageContent() {
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs relative">
           <div>
-            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Full Legal Name *</label>
+            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Full Name *</label>
             <input
               type="text"
               required
-              placeholder="Marcus Vance"
+              placeholder="Name"
               value={formData.fullName}
               onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
               className="w-full px-4 py-3 bg-slate-950/90 border border-slate-700/80 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all font-medium"
@@ -111,7 +111,7 @@ function RegisterPageContent() {
             <input
               type="email"
               required
-              placeholder="guardian@domain.com"
+              placeholder="Email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-4 py-3 bg-slate-950/90 border border-slate-700/80 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all font-medium"
@@ -175,10 +175,10 @@ function RegisterPageContent() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Emergency  Name</label>
+            <label className="block text-[11px] font-extrabold text-slate-300 uppercase mb-2 tracking-wider">Emergency Contact Name</label>
             <input
               type="text"
-              placeholder="Sarah Proxy"
+              placeholder="Emergency Contact Name"
               value={formData.emergencyContactName}
               onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })}
               className="w-full px-4 py-3 bg-slate-950/90 border border-slate-700/80 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 transition-all font-medium"
@@ -191,7 +191,7 @@ function RegisterPageContent() {
               disabled={loading}
               className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs tracking-widest uppercase transition-all shadow-xl shadow-emerald-500/20 active:scale-[0.99]"
             >
-              {loading ? "Allocating Persistent Storage Matrix..." : "   Confirm Identity "}
+              {loading ? "Loading..." : " Confirm Identity "}
             </button>
           </div>
         </form>
@@ -210,7 +210,7 @@ function RegisterPageContent() {
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-xs text-slate-500 animate-pulse">Allocating gateway structures...</div>}>
+    <Suspense fallback={<div className="p-12 text-center text-xs text-slate-500 animate-pulse">Loading...</div>}>
       <RegisterPageContent />
     </Suspense>
   );

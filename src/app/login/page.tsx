@@ -68,7 +68,7 @@ function LoginPageContent() {
           <h1 className="text-3xl font-black text-white tracking-tight">Guardian Sign-In</h1>
           <div className="w-12 h-1 bg-sky-500 mx-auto mt-2 rounded-full"></div>
           <p className="text-xs text-slate-300 mt-3 leading-relaxed">
-            Access your synchronized portal of digital pet passports and real-time medical updates.
+            Access your portal of digital pet passports and real-time medical updates.
           </p>
         </div>
 
@@ -112,7 +112,7 @@ function LoginPageContent() {
             disabled={loading}
             className="w-full py-3.5 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-sky-600 hover:from-sky-400 hover:to-blue-500 text-white font-extrabold text-xs tracking-widest uppercase transition-all shadow-xl shadow-sky-500/20 active:scale-[0.99]"
           >
-            {loading ? "Authorizing Signature Payload..." : "Enter Secure Workspace"}
+            {loading ? "Loading..." : "Enter Secure Workspace"}
           </button>
         </form>
 

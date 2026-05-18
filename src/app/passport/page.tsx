@@ -203,27 +203,64 @@ function PassportBookletContent() {
     }
   }
 
+  const [uploadingSticker, setUploadingSticker] = useState(false);
+  const [uploadingSeal, setUploadingSeal] = useState(false);
+
   // File encodings for visual dropzones
-  function handleStickerUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleStickerUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Str = reader.result as string;
-      setMicrochipFormData(prev => ({ ...prev, stickerUrl: base64Str }));
-    };
-    reader.readAsDataURL(file);
+
+    setUploadingSticker(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Sticker upload failed");
+      }
+
+      const blob = await response.json();
+      setMicrochipFormData(prev => ({ ...prev, stickerUrl: blob.url }));
+    } catch (err) {
+      console.error("Vercel Blob sticker upload failed:", err);
+      alert("Failed to upload barcode image. Please try again.");
+    } finally {
+      setUploadingSticker(false);
+    }
   }
 
-  function handleSealUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleSealUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Str = reader.result as string;
-      setClinicFormData(prev => ({ ...prev, sealUrl: base64Str }));
-    };
-    reader.readAsDataURL(file);
+
+    setUploadingSeal(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Seal upload failed");
+      }
+
+      const blob = await response.json();
+      setClinicFormData(prev => ({ ...prev, sealUrl: blob.url }));
+    } catch (err) {
+      console.error("Vercel Blob seal upload failed:", err);
+      alert("Failed to upload vet seal image. Please try again.");
+    } finally {
+      setUploadingSeal(false);
+    }
   }
 
   // Save/Update operations persistence calls
@@ -704,7 +741,11 @@ function PassportBookletContent() {
                           </div>
 
                           <div className="my-auto py-2 flex flex-col items-center justify-center w-full">
-                            {microchipFormData.stickerUrl ? (
+                            {uploadingSticker ? (
+                              <div className="text-center p-3 text-emerald-400 animate-pulse font-mono text-[10px]">
+                                ⚡ Uploading to Vercel Blob...
+                              </div>
+                            ) : microchipFormData.stickerUrl ? (
                               <div className="relative w-full max-h-40 flex justify-center">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
@@ -733,6 +774,7 @@ function PassportBookletContent() {
                               <input
                                 type="file"
                                 accept="image/*"
+                                disabled={uploadingSticker}
                                 onChange={handleStickerUpload}
                                 className="hidden"
                               />
@@ -842,7 +884,11 @@ function PassportBookletContent() {
                           </div>
 
                           <div className="my-auto py-2 flex flex-col items-center justify-center w-full">
-                            {clinicFormData.sealUrl ? (
+                            {uploadingSeal ? (
+                              <div className="text-center p-3 text-sky-400 animate-pulse font-mono text-[10px]">
+                                ⚡ Uploading to Vercel Blob...
+                              </div>
+                            ) : clinicFormData.sealUrl ? (
                               <div className="relative w-full max-h-40 flex justify-center">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
@@ -871,6 +917,7 @@ function PassportBookletContent() {
                               <input
                                 type="file"
                                 accept="image/*"
+                                disabled={uploadingSeal}
                                 onChange={handleSealUpload}
                                 className="hidden"
                               />
