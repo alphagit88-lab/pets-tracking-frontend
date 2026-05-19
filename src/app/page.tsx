@@ -138,7 +138,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-white group-hover:text-sky-400 transition-colors">
-                  Owner Detail & Proxy Engine
+                  Owner Details & Pets Details
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
                   Modify baseline home parameters, passport/NIC records, physical locations, and custom emergency contact proxies.
@@ -147,7 +147,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="pt-4 mt-4 border-t border-slate-800/80 flex items-center justify-between text-xs font-bold text-sky-400">
-              <span>Manage Credentials Matrix</span>
+              <span>Update Details</span>
               <ArrowRightIcon />
             </div>
             <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-500 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>

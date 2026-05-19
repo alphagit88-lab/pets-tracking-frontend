@@ -160,7 +160,7 @@ function GuardianPortalContent() {
     try {
       await api.put(`/owners/${activeOwner.id}`, ownerProfileData);
       await reloadActiveOwnerSession();
-      setProfileSuccessMsg("Guardian settings securely updated on persistent database core.");
+      setProfileSuccessMsg("Guardian informations securely updated");
       setTimeout(() => setProfileSuccessMsg(""), 3000);
     } catch (err) {
       console.error("Profile updates rejected:", err);
@@ -191,7 +191,7 @@ function GuardianPortalContent() {
       });
     } catch (err) {
       console.error("Failed writing attached pet partition:", err);
-      alert("Failed allocating pet verification schema.");
+      alert("Failed allocating pet verification.");
     } finally {
       setAddPetLoading(false);
     }
@@ -220,8 +220,8 @@ function GuardianPortalContent() {
       await reloadActiveOwnerSession();
       setEditingPetId(null);
     } catch (err) {
-      console.error("Failed updating persistent pet structures:", err);
-      alert("Failed committing pet database adjustments.");
+      console.error("Failed updating pet information", err);
+      alert("Failed to update ");
     } finally {
       setEditPetLoading(false);
     }
@@ -293,10 +293,9 @@ function GuardianPortalContent() {
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-xl font-bold text-white">Private Gateway Authorization Required</h2>
+            <h2 className="text-xl font-bold text-white">Authorization Required</h2>
             <p className="text-xs text-slate-400 max-w-md mx-auto">
-              The Guardian Hub is a private digital partition. Please sign in to authenticate your access tokens or spawn a new identity repository.
-            </p>
+              The Guardian Hub is a private digital partition. Please sign in to authenticate your access. </p>
           </div>
 
           <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -304,7 +303,7 @@ function GuardianPortalContent() {
               href="/login"
               className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-bold text-xs tracking-wider transition-all shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2"
             >
-              <span>🔑 Sign In Gateway</span>
+              <span>🔑 Sign In</span>
             </a>
 
             <a
@@ -647,7 +646,7 @@ function GuardianPortalContent() {
                         <div className="flex items-center justify-between pb-2 border-b border-slate-900">
                           <div>
                             <span className="font-bold text-sky-400 text-sm block">UPDATING PET INFORMATION</span>
-                            <span className="text-[10px] text-slate-500">Live configuration updates matching existing ID</span>
+                            <span className="text-[10px] text-slate-500">Live configuration updates</span>
                           </div>
                           <button
                             type="button"
@@ -744,7 +743,7 @@ function GuardianPortalContent() {
                           {/* Right Upload Frame updates */}
                           <div className="md:col-span-2 flex flex-col items-center justify-center pt-4 md:pt-0">
                             <label className="block text-[10px] text-slate-400 font-bold uppercase mb-2 tracking-wider text-center">
-                              Change Picture Box
+                              Change Photo
                             </label>
 
                             <div className="relative w-36 h-36 rounded-2xl border-2 border-dashed border-sky-500/40 bg-slate-900 hover:border-sky-500 transition-all flex flex-col items-center justify-center cursor-pointer group overflow-hidden shadow-inner">
@@ -761,7 +760,7 @@ function GuardianPortalContent() {
                               ) : (
                                 <div className="text-center p-2 text-slate-600 group-hover:text-sky-400 transition-colors">
                                   <span className="text-2xl block mb-1">📷</span>
-                                  <span className="text-[9px] block">Drop new square image</span>
+                                  <span className="text-[9px] block">Drop new image</span>
                                 </div>
                               )}
 
@@ -793,11 +792,11 @@ function GuardianPortalContent() {
                             disabled={editPetLoading}
                             className="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs tracking-wider transition-all shadow"
                           >
-                            {editPetLoading ? "Writing Record Updates..." : "Commit Updated Companion Attributes"}
+                            {editPetLoading ? "Updating....." : "Update Information"}
                           </button>
                         </div>
                       </form>
-                    );
+                    )
                   }
 
                   // STUNNING CARD LIST VIEW RENDERING
@@ -822,9 +821,6 @@ function GuardianPortalContent() {
                               <span className="text-[8px] uppercase tracking-wider text-slate-600 block">No Picture</span>
                             </div>
                           )}
-                          <div className="absolute bottom-0 inset-x-0 bg-slate-950/80 py-0.5 text-[8px] font-mono text-center text-slate-400 border-t border-slate-800/80">
-                            4cm x 4cm
-                          </div>
                         </div>
 
                         {/* Pet info table matrix layout */}
@@ -848,7 +844,7 @@ function GuardianPortalContent() {
                                 href={`/passport?petId=${pet.id}`}
                                 className="px-3 py-1.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs font-bold border border-orange-500/20 transition-all inline-flex items-center gap-1"
                               >
-                                <span>📖 View Booklet</span>
+                                <span>View Passport</span>
                               </a>
                               <button
                                 type="button"
@@ -896,7 +892,6 @@ function GuardianPortalContent() {
 
                       {/* Microchip status bar bottom preview */}
                       <div className="pt-2 border-t border-slate-800/40 flex items-center justify-between text-[11px] text-slate-500">
-                        <span>ISO microchip link sync state ready</span>
                         <span className="font-mono text-slate-400">
                           Vaccination logs allocated: <strong className="text-orange-400">{pet.vaccinations?.length || 0}</strong>
                         </span>

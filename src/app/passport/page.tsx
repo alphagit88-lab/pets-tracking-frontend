@@ -27,24 +27,8 @@ function PassportBookletContent() {
   const searchParams = useSearchParams();
   const initialPetId = searchParams.get("petId");
   
-  const [petList, setPetList] = useState<any[]>(() => {
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("titan_core_cached_pet_list");
-      if (cached) {
-        try { return JSON.parse(cached); } catch (e) { return []; }
-      }
-    }
-    return [];
-  });
-  const [selectedPet, setSelectedPet] = useState<any | null>(() => {
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("titan_core_cached_active_pet");
-      if (cached) {
-        try { return JSON.parse(cached); } catch (e) { return null; }
-      }
-    }
-    return null;
-  });
+  const [petList, setPetList] = useState<any[]>([]);
+  const [selectedPet, setSelectedPet] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"cover" | "microchip" | "vaccines" | "medical">("cover");
 
@@ -61,6 +45,20 @@ function PassportBookletContent() {
     return () => document.removeEventListener("mousedown", handleCloseDropdown);
   }, []);
 
+  // Hydrate cached data on client mount only (avoids SSR/client mismatch)
+  useEffect(() => {
+    try {
+      const cachedPetList = localStorage.getItem("titan_core_cached_pet_list");
+      const cachedActivePet = localStorage.getItem("titan_core_cached_active_pet");
+      const cachedVaccinations = localStorage.getItem("titan_core_cached_vaccinations");
+      if (cachedPetList) setPetList(JSON.parse(cachedPetList));
+      if (cachedActivePet) setSelectedPet(JSON.parse(cachedActivePet));
+      if (cachedVaccinations) setVaccinations(JSON.parse(cachedVaccinations));
+    } catch (e) {
+      // Ignore corrupt cache
+    }
+  }, []);
+
   useEffect(() => {
     if (selectedPet) {
       localStorage.setItem("titan_core_cached_active_pet", JSON.stringify(selectedPet));
@@ -75,15 +73,7 @@ function PassportBookletContent() {
   }, [selectedPet]);
 
   // Dynamic live clinical registry states
-  const [vaccinations, setVaccinations] = useState<any[]>(() => {
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("titan_core_cached_vaccinations");
-      if (cached) {
-        try { return JSON.parse(cached); } catch (e) { return []; }
-      }
-    }
-    return [];
-  });
+  const [vaccinations, setVaccinations] = useState<any[]>([]);
   const [clinics, setClinics] = useState<any[]>([]);
   const [showVacForm, setShowVacForm] = useState(false);
   const [editingVacId, setEditingVacId] = useState<string | null>(null);
