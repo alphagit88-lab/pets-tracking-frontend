@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { api } from "../../lib/axios";
 
 // Standard standalone vectors ensuring flawless execution
@@ -25,6 +25,7 @@ const MicrochipStickerIcon = () => (
 
 function PassportBookletContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialPetId = searchParams.get("petId");
 
   const [petList, setPetList] = useState<any[]>([]);
@@ -62,15 +63,12 @@ function PassportBookletContent() {
   useEffect(() => {
     if (selectedPet) {
       localStorage.setItem("titan_core_cached_active_pet", JSON.stringify(selectedPet));
-      if (typeof window !== "undefined") {
-        const url = new URL(window.location.href);
-        if (url.searchParams.get("petId") !== selectedPet.id) {
-          url.searchParams.set("petId", selectedPet.id);
-          window.history.replaceState(null, "", url.toString());
-        }
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("petId") !== selectedPet.id) {
+        router.replace(`/passport?petId=${selectedPet.id}`, { scroll: false });
       }
     }
-  }, [selectedPet]);
+  }, [selectedPet, router]);
 
   // Dynamic live clinical registry states
   const [vaccinations, setVaccinations] = useState<any[]>([]);
@@ -85,6 +83,29 @@ function PassportBookletContent() {
     dateGiven: new Date().toISOString().split("T")[0],
     validUntilNextDue: "",
     vetId: ""
+  });
+
+  // Medical Record states for titer tests, deworming, and custom medical entries
+  const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
+  const [showMedForm, setShowMedForm] = useState(false);
+  const [medFormLoading, setMedFormLoading] = useState(false);
+  const [editingMedId, setEditingMedId] = useState<string | null>(null);
+  const [medFormData, setMedFormData] = useState({
+    recordType: "Test", // Test / Deworming / Surgery / Treatment
+    date: new Date().toISOString().split("T")[0],
+    details: {
+      testName: "Rabies Titer",
+      sampleDate: "",
+      labName: "",
+      result: "",
+      reportNo: "",
+      approved: "Yes",
+      treatmentType: "Internal", // Internal (deworming) / External (flea/tick)
+      product: "",
+      dose: "",
+      nextDue: "",
+      notes: ""
+    }
   });
 
   // Microchip Section form states
@@ -185,11 +206,22 @@ function PassportBookletContent() {
       }
     }
     loadPets();
-  }, [initialPetId]);
+  }, []);
+
+  // Synchronize URL changes (e.g. back/forward navigation or manual URL updates) with selectedPet state
+  useEffect(() => {
+    if (initialPetId && petList.length > 0) {
+      const matched = petList.find((p: any) => p.id === initialPetId);
+      if (matched && matched.id !== selectedPet?.id) {
+        setSelectedPet(matched);
+      }
+    }
+  }, [initialPetId, petList, selectedPet]);
 
   useEffect(() => {
     if (selectedPet?.id) {
       loadVaccinations(selectedPet.id);
+      loadMedicalRecords(selectedPet.id);
 
       // Hydrate microchip form data
       const mc = selectedPet.microchipRecord || {};
@@ -222,6 +254,15 @@ function PassportBookletContent() {
       localStorage.setItem("titan_core_cached_vaccinations", JSON.stringify(res.data || []));
     } catch (err) {
       console.error("Failed fetching live pet vaccinations:", err);
+    }
+  }
+
+  async function loadMedicalRecords(petId: string) {
+    try {
+      const res = await api.get(`/pets/${petId}/medical-records`);
+      setMedicalRecords(res.data || []);
+    } catch (err) {
+      console.error("Failed fetching live medical records:", err);
     }
   }
 
@@ -288,6 +329,95 @@ function PassportBookletContent() {
       console.error("Failed deleting vaccination log:", err);
       alert("Failed deleting clinical entry.");
     }
+  }
+
+  async function handleSaveMedicalRecord(e?: React.FormEvent, customPayload?: any) {
+    if (e) e.preventDefault();
+    if (!selectedPet) return;
+    setMedFormLoading(true);
+    try {
+      const payload = customPayload || {
+        recordType: medFormData.recordType,
+        date: medFormData.date,
+        details: medFormData.details
+      };
+
+      if (editingMedId) {
+        await api.put(`/medical-records/${editingMedId}`, payload);
+      } else {
+        await api.post(`/pets/${selectedPet.id}/medical-records`, payload);
+      }
+
+      await loadMedicalRecords(selectedPet.id);
+      setShowMedForm(false);
+      setEditingMedId(null);
+    } catch (err) {
+      console.error("Failed persisting medical record:", err);
+      alert("Failed saving medical record. Verify input configuration.");
+    } finally {
+      setMedFormLoading(false);
+    }
+  }
+
+  async function handleDeleteMedicalRecord(id: string) {
+    if (!confirm("Remove this medical record permanently?")) return;
+    try {
+      await api.delete(`/medical-records/${id}`);
+      if (selectedPet?.id) await loadMedicalRecords(selectedPet.id);
+    } catch (err) {
+      console.error("Failed deleting medical record:", err);
+      alert("Failed deleting clinical entry.");
+    }
+  }
+
+  function startEditMed(record: any) {
+    setEditingMedId(record.id);
+    setMedFormData({
+      recordType: record.recordType || "Test",
+      date: record.date ? record.date.split("T")[0] : new Date().toISOString().split("T")[0],
+      details: {
+        testName: record.details?.testName || "Rabies Titer",
+        sampleDate: record.details?.sampleDate || "",
+        labName: record.details?.labName || "",
+        result: record.details?.result || "",
+        reportNo: record.details?.reportNo || "",
+        approved: record.details?.approved || "Yes",
+        treatmentType: record.details?.treatmentType || "Internal",
+        product: record.details?.product || "",
+        dose: record.details?.dose || "",
+        nextDue: record.details?.nextDue || "",
+        notes: record.details?.notes || ""
+      }
+    });
+    setShowMedForm(true);
+    setTimeout(() => {
+      document.getElementById("passport-scroll-container")?.scrollTo({ top: 0, behavior: "smooth" });
+    }, 50);
+  }
+
+  function startAddMed(type: string, subName?: string) {
+    setEditingMedId(null);
+    setMedFormData({
+      recordType: type,
+      date: new Date().toISOString().split("T")[0],
+      details: {
+        testName: subName || "Rabies Titer",
+        sampleDate: new Date().toISOString().split("T")[0],
+        labName: "",
+        result: "",
+        reportNo: "",
+        approved: "Yes",
+        treatmentType: subName === "External" ? "External" : "Internal",
+        product: "",
+        dose: "",
+        nextDue: "",
+        notes: ""
+      }
+    });
+    setShowMedForm(true);
+    setTimeout(() => {
+      document.getElementById("passport-scroll-container")?.scrollTo({ top: 0, behavior: "smooth" });
+    }, 50);
   }
 
   const [uploadingSticker, setUploadingSticker] = useState(false);
@@ -658,7 +788,7 @@ function PassportBookletContent() {
                       </div>
 
                       {/* Right Side: PDF Page 2 PET & OWNER INFORMATION Form Registry */}
-                      <div className="p-8 lg:p-10 flex flex-col justify-between overflow-y-auto max-h-[700px]">
+                      <div id="passport-scroll-container" className="p-8 lg:p-10 flex flex-col justify-between overflow-y-auto flex-1">
 
                         <div className="space-y-6">
 
@@ -788,7 +918,7 @@ function PassportBookletContent() {
 
                   {/* TAB 2: MICROCHIP & VETERINARY SIGNATURES (PDF Page 3 & 4 Replica) */}
                   {activeTab === "microchip" && (
-                    <div className="flex-1 p-6 lg:p-8 overflow-y-auto max-h-[700px] bg-slate-900/40">
+                    <div id="passport-scroll-container" className="flex-1 p-6 lg:p-8 overflow-y-auto bg-slate-900/40">
                       <div className="max-w-6xl mx-auto space-y-8">
 
                         {/* --- DUAL-PAGE PASSPORT BOOKLET REPLICA (PAGES 3 & 4) --- */}
@@ -1210,14 +1340,14 @@ function PassportBookletContent() {
 
                   {/* TAB 3: LIVE VACCINATION REGISTRY (PDF Page 4 & 7) */}
                   {activeTab === "vaccines" && (
-                    <div className="flex-1 p-8 lg:p-12 overflow-y-auto max-h-[700px]">
-                      <div className="max-w-4xl mx-auto space-y-8">
+                    <div id="passport-scroll-container" className="flex-1 p-8 lg:p-12 overflow-y-auto">
+                      <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
 
                         {/* Header Controls */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                           <div>
-                            <h3 className="text-lg font-bold text-white">Vaccination Records</h3>
-                            <p className="text-xs text-slate-400">Manage your pets vaccination records.</p>
+                            <h3 className="text-lg font-bold text-white">Vaccination Registry</h3>
+                            <p className="text-xs text-slate-400">Manage and certify official pet vaccinations.</p>
                           </div>
 
                           <button
@@ -1239,7 +1369,10 @@ function PassportBookletContent() {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => setShowVacForm(false)}
+                                onClick={() => {
+                                  setShowVacForm(false);
+                                  setEditingVacId(null);
+                                }}
                                 className="text-[10px] text-slate-500 hover:text-slate-300"
                               >
                                 Close Panel
@@ -1252,7 +1385,7 @@ function PassportBookletContent() {
                                 <select
                                   value={vacFormData.vaccineCategory}
                                   onChange={(e) => setVacFormData({ ...vacFormData, vaccineCategory: e.target.value })}
-                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs"
+                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700"
                                 >
                                   <option value="Rabies">Rabies Verification</option>
                                   <option value="Core">Core / Species Booster</option>
@@ -1268,7 +1401,7 @@ function PassportBookletContent() {
                                   placeholder="e.g. Nobivac Rabies, FVRCP Core"
                                   value={vacFormData.vaccineName}
                                   onChange={(e) => setVacFormData({ ...vacFormData, vaccineName: e.target.value })}
-                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200"
+                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-slate-700"
                                 />
                               </div>
                             </div>
@@ -1281,7 +1414,7 @@ function PassportBookletContent() {
                                   placeholder="B-992184"
                                   value={vacFormData.batchNo}
                                   onChange={(e) => setVacFormData({ ...vacFormData, batchNo: e.target.value })}
-                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 font-mono"
+                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 font-mono focus:outline-none focus:border-slate-700"
                                 />
                               </div>
 
@@ -1292,7 +1425,7 @@ function PassportBookletContent() {
                                   required
                                   value={vacFormData.dateGiven}
                                   onChange={(e) => setVacFormData({ ...vacFormData, dateGiven: e.target.value })}
-                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200"
+                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-slate-700"
                                 />
                               </div>
 
@@ -1302,7 +1435,7 @@ function PassportBookletContent() {
                                   type="date"
                                   value={vacFormData.validUntilNextDue}
                                   onChange={(e) => setVacFormData({ ...vacFormData, validUntilNextDue: e.target.value })}
-                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200"
+                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-slate-700"
                                 />
                               </div>
                             </div>
@@ -1312,9 +1445,9 @@ function PassportBookletContent() {
                               <select
                                 value={vacFormData.vetId}
                                 onChange={(e) => setVacFormData({ ...vacFormData, vetId: e.target.value })}
-                                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs"
+                                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700"
                               >
-                                <option value="">--select--</option>
+                                <option value="">--select clinic--</option>
                                 {clinics.map((c: any) => (
                                   <option key={c.id} value={c.id}>
                                     {c.clinicName} (Lic: {c.licenseNo})
@@ -1328,130 +1461,585 @@ function PassportBookletContent() {
                               disabled={vacFormLoading}
                               className="w-full py-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-600 text-white font-bold text-xs transition-all shadow"
                             >
-                              {vacFormLoading ? "Updating..." : "UPDATE VACCINATION"}
+                              {vacFormLoading ? "Updating..." : "SAVE VACCINATION RECORD"}
                             </button>
                           </form>
                         )}
 
-                        {/* Displaying Live Roster */}
-                        {vaccinations.length === 0 ? (
-                          <div className="p-8 rounded-2xl bg-slate-950/40 border border-slate-800 text-center text-xs text-slate-500 space-y-2">
-                            <div>💉</div>
-                            <p>No vaccinations recorded.</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {vaccinations.map((vac: any) => {
-                              const categoryColor =
-                                vac.vaccineCategory === "Rabies"
-                                  ? "text-orange-400 bg-orange-500/10 border-orange-500/20"
-                                  : vac.vaccineCategory === "Core"
-                                    ? "text-sky-400 bg-sky-500/10 border-sky-500/20"
-                                    : "text-purple-400 bg-purple-500/10 border-purple-500/20";
+                        {/* Species Core Vaccines Template (PDF Image 1 Layout) */}
+                        {(() => {
+                          const isCat = selectedPet?.species?.toLowerCase() === "cat" || selectedPet?.species?.toLowerCase() === "feline";
+                          const coreVaccines = vaccinations.filter(
+                            v => v.vaccineCategory === "Core" ||
+                              v.vaccineName?.toLowerCase().includes("dhpp") ||
+                              v.vaccineName?.toLowerCase().includes("dhlpp") ||
+                              v.vaccineName?.toLowerCase().includes("fvrcp")
+                          );
 
-                              return (
-                                <div
-                                  key={vac.id}
-                                  className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                                >
-                                  <div className="space-y-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${categoryColor}`}>
-                                        {vac.vaccineCategory}
-                                      </span>
-                                      <span className="font-bold text-slate-200 text-sm truncate">
-                                        {vac.vaccineName}
-                                      </span>
-                                    </div>
-
-                                    <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                      <span>Given: <strong className="text-slate-300 font-mono">{new Date(vac.dateGiven).toLocaleDateString()}</strong></span>
-                                      {vac.validUntilNextDue && (
-                                        <span>Due: <strong className="text-orange-400 font-mono">{new Date(vac.validUntilNextDue).toLocaleDateString()}</strong></span>
-                                      )}
-                                      {vac.batchNo && (
-                                        <span>Batch: <code className="text-slate-500 bg-slate-900 px-1 rounded">{vac.batchNo}</code></span>
-                                      )}
-                                    </div>
-
-                                    {vac.veterinaryClinic && (
-                                      <div className="text-[10px] text-slate-500 pt-0.5 flex items-center gap-1">
-                                        <span>🏥 Accredited Base:</span>
-                                        <span className="text-slate-400 font-semibold">{vac.veterinaryClinic.clinicName}</span>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                    <span className="hidden sm:inline-block text-right text-emerald-500 font-mono text-[9px] font-bold pr-2 border-r border-slate-800">
-                                      ✓ SECURE STAMP
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => startEditVac(vac)}
-                                      className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-400 text-xs font-bold border border-slate-800 transition-all"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteVaccination(vac.id)}
-                                      className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold border border-rose-500/20 transition-all"
-                                    >
-                                      Revoke
-                                    </button>
-                                  </div>
+                          return (
+                            <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800/80 space-y-4">
+                              <div className="flex items-center justify-between pb-3 border-b border-slate-900">
+                                <div>
+                                  <h4 className="text-[10px] font-bold text-sky-400 uppercase tracking-widest">
+                                    {isCat ? "Official Booklet Page 9 (Cats)" : "Official Booklet Page 9 (Dogs)"}
+                                  </h4>
+                                  <h3 className="text-base font-extrabold text-white">
+                                    {isCat ? "CORE VACCINATION (CATS) — FVRCP" : "CORE VACCINATION (DOGS) — DHPP/DHLPP"}
+                                  </h3>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 uppercase tracking-wider">
+                                  {selectedPet?.species || "Dog"} Core
+                                </span>
+                              </div>
 
-                        {/* Footer Info */}
-                        <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center gap-3 text-[11px] text-slate-500">
-                          <span className="text-base">🛡️</span>
-                          <p>Update vaccination records.</p>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="border-b border-slate-900 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                                      <th className="py-2.5 px-3">Date Given</th>
+                                      <th className="py-2.5 px-3">Vaccine</th>
+                                      <th className="py-2.5 px-3">Batch No</th>
+                                      <th className="py-2.5 px-3">Next Due</th>
+                                      <th className="py-2.5 px-3 text-right">Vet Stamp</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-900/60">
+                                    {(() => {
+                                      const rowsCount = Math.max(2, coreVaccines.length);
+                                      return Array.from({ length: rowsCount }).map((_, idx) => {
+                                        const vac = coreVaccines[idx];
+                                        if (vac) {
+                                          return (
+                                            <tr key={vac.id} className="hover:bg-slate-900/20 text-slate-200 font-mono">
+                                              <td className="py-3.5 px-3 text-slate-300 font-semibold">
+                                                {new Date(vac.dateGiven).toLocaleDateString()}
+                                              </td>
+                                              <td className="py-3.5 px-3 font-bold text-sky-400">
+                                                {vac.vaccineName}
+                                              </td>
+                                              <td className="py-3.5 px-3 text-slate-400">
+                                                {vac.batchNo || "—"}
+                                              </td>
+                                              <td className="py-3.5 px-3 text-orange-400 font-semibold">
+                                                {vac.validUntilNextDue ? new Date(vac.validUntilNextDue).toLocaleDateString() : "—"}
+                                              </td>
+                                              <td className="py-3.5 px-3 text-right">
+                                                {vac.veterinaryClinic ? (
+                                                  <span className="inline-block px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-sans text-[10px] font-bold">
+                                                    ✓ {vac.veterinaryClinic.clinicName}
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-500 font-sans">✓ STAMPED</span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          );
+                                        } else {
+                                          return (
+                                            <tr key={`empty-${idx}`} className="text-slate-600">
+                                              <td className="py-3.5 px-3 italic text-slate-700">Pending</td>
+                                              <td className="py-3.5 px-3 font-bold text-slate-600">
+                                                {isCat ? "FVRCP Core" : "DHPP/DHLPP Core"}
+                                              </td>
+                                              <td className="py-3.5 px-3 italic text-slate-700">—</td>
+                                              <td className="py-3.5 px-3 italic text-slate-700">—</td>
+                                              <td className="py-3.5 px-3 text-right font-sans">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setEditingVacId(null);
+                                                    setVacFormData({
+                                                      vaccineCategory: "Core",
+                                                      vaccineName: isCat ? "FVRCP" : "DHPP/DHLPP",
+                                                      batchNo: "",
+                                                      dateGiven: new Date().toISOString().split("T")[0],
+                                                      validUntilNextDue: "",
+                                                      vetId: clinics.length > 0 ? clinics[0].id : ""
+                                                    });
+                                                    setShowVacForm(true);
+                                                  }}
+                                                  className="text-[10px] text-orange-400/80 hover:text-orange-400 font-bold hover:underline"
+                                                >
+                                                  + Log Vaccine
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          );
+                                        }
+                                      });
+                                    })()}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Displaying Live Roster */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                            Clinical Registry Log (All Records)
+                          </h4>
+
+                          {vaccinations.length === 0 ? (
+                            <div className="p-8 rounded-2xl bg-slate-950/40 border border-slate-800 text-center text-xs text-slate-500 space-y-2">
+                              <div>💉</div>
+                              <p>No vaccination records stored in database.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {vaccinations.map((vac: any) => {
+                                const categoryColor =
+                                  vac.vaccineCategory === "Rabies"
+                                    ? "text-orange-400 bg-orange-500/10 border-orange-500/20"
+                                    : vac.vaccineCategory === "Core"
+                                      ? "text-sky-400 bg-sky-500/10 border-sky-500/20"
+                                      : "text-purple-400 bg-purple-500/10 border-purple-500/20";
+
+                                return (
+                                  <div
+                                    key={vac.id}
+                                    className="p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                                  >
+                                    <div className="space-y-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${categoryColor}`}>
+                                          {vac.vaccineCategory}
+                                        </span>
+                                        <span className="font-bold text-slate-200 text-sm truncate">
+                                          {vac.vaccineName}
+                                        </span>
+                                      </div>
+
+                                      <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                        <span>Given: <strong className="text-slate-300 font-mono">{new Date(vac.dateGiven).toLocaleDateString()}</strong></span>
+                                        {vac.validUntilNextDue && (
+                                          <span>Due: <strong className="text-orange-400 font-mono">{new Date(vac.validUntilNextDue).toLocaleDateString()}</strong></span>
+                                        )}
+                                        {vac.batchNo && (
+                                          <span>Batch: <code className="text-slate-500 bg-slate-900 px-1 rounded">{vac.batchNo}</code></span>
+                                        )}
+                                      </div>
+
+                                      {vac.veterinaryClinic && (
+                                        <div className="text-[10px] text-slate-500 pt-0.5 flex items-center gap-1">
+                                          <span>🏥 Clinic Stamp:</span>
+                                          <span className="text-slate-400 font-semibold">{vac.veterinaryClinic.clinicName}</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                      <span className="hidden sm:inline-block text-right text-emerald-500 font-mono text-[9px] font-bold pr-2 border-r border-slate-800">
+                                        ✓ SECURE STAMP
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditVac(vac)}
+                                        className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-400 text-xs font-bold border border-slate-800 transition-all"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteVaccination(vac.id)}
+                                        className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold border border-rose-500/20 transition-all"
+                                      >
+                                        Revoke
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
 
                       </div>
                     </div>
                   )}
-
                   {/* TAB 4: ADDITIONAL TESTS & DEWORMING (PDF Page 5 & 6) */}
                   {activeTab === "medical" && (
-                    <div className="flex-1 p-8 lg:p-12 overflow-y-auto max-h-[700px]">
-                      <div className="max-w-4xl mx-auto space-y-10">
+                    <div id="passport-scroll-container" className="flex-1 p-6 lg:p-8 overflow-y-auto">
+                      <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
 
-                        {/* Rabies Titer Test Matrix */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                        {/* Top Action Panel */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-800">
+                          <div>
+                            <h3 className="text-lg font-bold text-white">Diagnostics & Treatments</h3>
+                            <p className="text-xs text-slate-400">Log Rabies titers, deworming cycles, surgery history, and lab tests.</p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => startAddMed("Test")}
+                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs transition-all duration-300 flex items-center gap-1.5 shadow-[0_0_15px_rgba(147,51,234,0.35)] hover:shadow-[0_0_22px_rgba(147,51,234,0.55)] border border-purple-500/20 hover:border-purple-400/30 transform hover:-translate-y-0.5 self-start sm:self-auto"
+                          >
+                            <span>➕</span>
+                            <span>Add Diagnostic/Log</span>
+                          </button>
+                        </div>
+
+                        {/* Dynamic Medical Form */}
+                        {showMedForm && (
+                          <form onSubmit={handleSaveMedicalRecord} className="p-5 rounded-2xl bg-slate-950 border border-purple-500/30 space-y-4 animate-fade-in text-xs">
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-900">
+                              <span className="font-bold text-purple-400">
+                                {editingMedId ? "Update Health & Test Record" : "Add New Health & Test Record"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowMedForm(false);
+                                  setEditingMedId(null);
+                                }}
+                                className="text-[10px] text-slate-500 hover:text-slate-300"
+                              >
+                                Close Panel
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[10px] text-slate-500 uppercase mb-1">Record Type *</label>
+                                <select
+                                  value={medFormData.recordType}
+                                  onChange={(e) => setMedFormData({ ...medFormData, recordType: e.target.value })}
+                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700"
+                                >
+                                  <option value="Test">Test (Titer, CBC, Heartworm)</option>
+                                  <option value="Treatment">Parasitic Treatment (Deworming / Flea & Tick)</option>
+                                  <option value="Surgery">Surgery & Clinical Notes</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-slate-500 uppercase mb-1">Date *</label>
+                                <input
+                                  type="date"
+                                  required
+                                  value={medFormData.date}
+                                  onChange={(e) => setMedFormData({ ...medFormData, date: e.target.value })}
+                                  className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                />
+                              </div>
+                            </div>
+
+                            {medFormData.recordType === "Test" && (
+                              <div className="space-y-3 pt-2 border-t border-slate-900">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 uppercase mb-1">Test Name *</label>
+                                    <select
+                                      value={medFormData.details.testName}
+                                      onChange={(e) => setMedFormData({
+                                        ...medFormData,
+                                        details: { ...medFormData.details, testName: e.target.value }
+                                      })}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-slate-700"
+                                    >
+                                      <option value="Rabies Titer">Rabies Titer Test</option>
+                                      <option value="CBC">CBC Test</option>
+                                      <option value="Heartworm">Heartworm Test</option>
+                                      <option value="Other">Other Diagnostic Test</option>
+                                    </select>
+                                  </div>
+
+                                  {medFormData.details.testName === "Other" && (
+                                    <div>
+                                      <label className="block text-[10px] text-slate-500 uppercase mb-1">Custom Test Name</label>
+                                      <input
+                                        type="text"
+                                        placeholder="Enter test name"
+                                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                        onChange={(e) => setMedFormData({
+                                          ...medFormData,
+                                          details: { ...medFormData.details, testName: e.target.value }
+                                        })}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {medFormData.details.testName === "Rabies Titer" ? (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-[10px] text-slate-500 uppercase mb-1">Lab Name</label>
+                                      <input
+                                        type="text"
+                                        placeholder="Accredited Lab name"
+                                        value={medFormData.details.labName}
+                                        onChange={(e) => setMedFormData({
+                                          ...medFormData,
+                                          details: { ...medFormData.details, labName: e.target.value }
+                                        })}
+                                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-slate-500 uppercase mb-1">Result (IU/ml)</label>
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 0.54"
+                                        value={medFormData.details.result}
+                                        onChange={(e) => setMedFormData({
+                                          ...medFormData,
+                                          details: { ...medFormData.details, result: e.target.value }
+                                        })}
+                                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-slate-500 uppercase mb-1">Report No</label>
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. LAB-2026-981"
+                                        value={medFormData.details.reportNo}
+                                        onChange={(e) => setMedFormData({
+                                          ...medFormData,
+                                          details: { ...medFormData.details, reportNo: e.target.value }
+                                        })}
+                                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-slate-500 uppercase mb-1">Approved by Authorities</label>
+                                      <select
+                                        value={medFormData.details.approved}
+                                        onChange={(e) => setMedFormData({
+                                          ...medFormData,
+                                          details: { ...medFormData.details, approved: e.target.value }
+                                        })}
+                                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none"
+                                      >
+                                        <option value="Yes">Yes (Accredited)</option>
+                                        <option value="No">No (Pending)</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-[10px] text-slate-500 uppercase mb-1">Result / Diagnosis</label>
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. Negative, Healthy"
+                                        value={medFormData.details.result}
+                                        onChange={(e) => setMedFormData({
+                                          ...medFormData,
+                                          details: { ...medFormData.details, result: e.target.value }
+                                        })}
+                                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-slate-500 uppercase mb-1">Clinic Reference</label>
+                                      <input
+                                        type="text"
+                                        placeholder="Clinic or Lab Name"
+                                        value={medFormData.details.labName}
+                                        onChange={(e) => setMedFormData({
+                                          ...medFormData,
+                                          details: { ...medFormData.details, labName: e.target.value }
+                                        })}
+                                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {medFormData.recordType === "Treatment" && (
+                              <div className="space-y-3 pt-2 border-t border-slate-900">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 uppercase mb-1">Treatment Type</label>
+                                    <select
+                                      value={medFormData.details.treatmentType}
+                                      onChange={(e) => setMedFormData({
+                                        ...medFormData,
+                                        details: { ...medFormData.details, treatmentType: e.target.value }
+                                      })}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none"
+                                    >
+                                      <option value="Internal">Deworming (Internal)</option>
+                                      <option value="External">Flea & Tick (External)</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 uppercase mb-1">Product Name</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. Drontal Plus, Frontline"
+                                      value={medFormData.details.product}
+                                      onChange={(e) => setMedFormData({
+                                        ...medFormData,
+                                        details: { ...medFormData.details, product: e.target.value }
+                                      })}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 uppercase mb-1">Dose / Administered</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. 1 Tab, 1 Pipette"
+                                      value={medFormData.details.dose}
+                                      onChange={(e) => setMedFormData({
+                                        ...medFormData,
+                                        details: { ...medFormData.details, dose: e.target.value }
+                                      })}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 uppercase mb-1">Next Due Date</label>
+                                    <input
+                                      type="date"
+                                      value={medFormData.details.nextDue}
+                                      onChange={(e) => setMedFormData({
+                                        ...medFormData,
+                                        details: { ...medFormData.details, nextDue: e.target.value }
+                                      })}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {medFormData.recordType === "Surgery" && (
+                              <div className="space-y-3 pt-2 border-t border-slate-900">
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 uppercase mb-1">Clinical & Surgery Notes *</label>
+                                  <textarea
+                                    rows={3}
+                                    placeholder="Log any clinical procedures, surgeries, sterilization details, or medical notes."
+                                    value={medFormData.details.notes}
+                                    onChange={(e) => setMedFormData({
+                                      ...medFormData,
+                                      details: { ...medFormData.details, notes: e.target.value }
+                                    })}
+                                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-slate-700"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            <button
+                              type="submit"
+                              disabled={medFormLoading}
+                              className="w-full py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold text-xs transition-all shadow"
+                            >
+                              {medFormLoading ? "Saving..." : "UPDATE HEALTH RECORD"}
+                            </button>
+                          </form>
+                        )}
+
+                        {/* Rabies Titer Test Matrix & Additional Vaccinations (PDF Image 2 Layout) */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+
+                          {/* Rabies Titer Dynamic Registry */}
                           <div>
                             <div className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-1">
                               International Titer Registry
                             </div>
-                            <h3 className="text-lg font-bold text-white mb-4">RABIES TITER TEST</h3>
-
-                            <div className="space-y-2 text-xs bg-slate-950/60 p-4 rounded-xl border border-slate-800">
-                              <div className="grid grid-cols-2 py-1.5 border-b border-slate-900">
-                                <span className="text-slate-500">Sample Date</span>
-                                <span className="font-mono text-slate-200">//20__</span>
-                              </div>
-                              <div className="grid grid-cols-2 py-1.5 border-b border-slate-900">
-                                <span className="text-slate-500">Lab Name</span>
-                                <span className="text-slate-400 italic">__________________</span>
-                              </div>
-                              <div className="grid grid-cols-2 py-1.5 border-b border-slate-900">
-                                <span className="text-slate-500">Result</span>
-                                <span className="font-mono text-slate-400">______ IU/ml</span>
-                              </div>
-                              <div className="grid grid-cols-2 py-1.5 border-b border-slate-900">
-                                <span className="text-slate-500">Report No</span>
-                                <span className="font-mono text-slate-400">__________</span>
-                              </div>
-                              <div className="grid grid-cols-2 py-1.5">
-                                <span className="text-slate-500">Approved</span>
-                                <span className="text-slate-600 font-bold">Yes / No</span>
-                              </div>
+                            <div className="flex items-center justify-between mb-4">
+                              <h3 className="text-lg font-bold text-white">RABIES TITER TEST</h3>
+                              {(() => {
+                                const titer = medicalRecords.find(r => r.recordType === "Test" && r.details?.testName === "Rabies Titer");
+                                return titer ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditMed(titer)}
+                                      className="px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-sky-400 hover:text-sky-300 text-xs font-semibold border border-slate-800 hover:border-slate-700 transition-all"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteMedicalRecord(titer.id)}
+                                      className="px-3 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-semibold border border-rose-500/20 transition-all"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => startAddMed("Test", "Rabies Titer")}
+                                    className="px-3 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-white text-xs font-semibold border border-purple-500/20 hover:border-purple-500/40 transition-all duration-200"
+                                  >
+                                    + Add Record
+                                  </button>
+                                );
+                              })()}
                             </div>
+
+                            {(() => {
+                              const titer = medicalRecords.find(r => r.recordType === "Test" && r.details?.testName === "Rabies Titer");
+                              if (titer) {
+                                return (
+                                  <div className="space-y-2.5 text-xs bg-slate-950/60 p-4 rounded-2xl border border-slate-800 h-full flex flex-col justify-between">
+                                    <div className="space-y-2">
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900">
+                                        <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Sample Date</span>
+                                        <span className="font-mono text-slate-200 font-bold">{titer.date ? new Date(titer.date).toLocaleDateString() : titer.details.sampleDate || "—"}</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900">
+                                        <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Lab Name</span>
+                                        <span className="text-slate-300 font-bold">{titer.details.labName || "—"}</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900">
+                                        <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Result</span>
+                                        <span className="font-mono text-emerald-400 font-bold">{titer.details.result ? `${titer.details.result} IU/ml` : "—"}</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900">
+                                        <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Report No</span>
+                                        <span className="font-mono text-slate-400">{titer.details.reportNo || "—"}</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1">
+                                        <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Approved</span>
+                                        <span className={`font-bold ${titer.details.approved === "Yes" ? "text-emerald-500" : "text-amber-500"}`}>
+                                          {titer.details.approved || "Yes"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className="space-y-2.5 text-xs bg-slate-950/40 p-4 rounded-2xl border border-slate-800/80 border-dashed text-slate-500 h-full flex flex-col justify-between">
+                                    <div className="space-y-1">
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900/60">
+                                        <span className="text-slate-500 text-[10px] uppercase font-semibold">Sample Date</span>
+                                        <span className="font-mono text-slate-600">//20__</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900/60">
+                                        <span className="text-slate-500 text-[10px] uppercase font-semibold">Lab Name</span>
+                                        <span className="text-slate-600 italic">__________________</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900/60">
+                                        <span className="text-slate-500 text-[10px] uppercase font-semibold">Result</span>
+                                        <span className="font-mono text-slate-600">______ IU/ml</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1 border-b border-slate-900/60">
+                                        <span className="text-slate-500 text-[10px] uppercase font-semibold">Report No</span>
+                                        <span className="font-mono text-slate-600">__________</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 py-1">
+                                        <span className="text-slate-500 text-[10px] uppercase font-semibold">Approved</span>
+                                        <span className="text-slate-600 font-bold">Yes / No</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            })()}
                           </div>
 
                           {/* Additional Vaccinations Matrix */}
@@ -1459,59 +2047,280 @@ function PassportBookletContent() {
                             <div className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-1">
                               Supplemental Prevention
                             </div>
-                            <h3 className="text-lg font-bold text-white mb-4">ADDITIONAL VACCINATIONS</h3>
+                            <div className="flex items-center justify-between mb-4">
+                              <h3 className="text-lg font-bold text-white">ADDITIONAL VACCINATIONS</h3>
+                            </div>
 
-                            <div className="space-y-2 text-xs">
-                              <div className="flex items-center justify-between py-1.5 border-b border-slate-800">
-                                <span className="font-medium text-slate-300">Kennel Cough</span>
-                                <span className="text-slate-600 font-mono text-[10px]">Uncertified</span>
-                              </div>
-                              <div className="flex items-center justify-between py-1.5 border-b border-slate-800">
-                                <span className="font-medium text-slate-300">Leptospirosis</span>
-                                <span className="text-slate-600 font-mono text-[10px]">Uncertified</span>
-                              </div>
-                              <div className="flex items-center justify-between py-1.5 border-b border-slate-800">
-                                <span className="font-medium text-slate-300">FeLV (Cats)</span>
-                                <span className="text-slate-600 font-mono text-[10px]">Uncertified</span>
+                            <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 h-full">
+                              <div className="space-y-3">
+                                {["Kennel Cough", "Leptospirosis", "FeLV (Cats)"].map((vacName, index, arr) => {
+                                  const keyName = vacName.includes("FeLV") ? "felv" : vacName.toLowerCase();
+                                  const actualVac = vaccinations.find(
+                                    v => v.vaccineCategory === "Additional" &&
+                                      v.vaccineName?.toLowerCase().includes(keyName.replace(" (cats)", ""))
+                                  );
+
+                                  return (
+                                    <div key={vacName} className={`flex items-center justify-between py-2 ${index < arr.length - 1 ? "border-b border-slate-800/60" : ""}`}>
+                                      <div className="min-w-0">
+                                        <span className="font-medium text-slate-300 block">{vacName}</span>
+                                        {actualVac && (
+                                          <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
+                                            Given: {new Date(actualVac.dateGiven).toLocaleDateString()}
+                                            {actualVac.batchNo ? ` (Batch: ${actualVac.batchNo})` : ""}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {actualVac ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteVaccination(actualVac.id)}
+                                          className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-semibold border border-rose-500/20 transition-all"
+                                        >
+                                          Revoke
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingVacId(null);
+                                            setVacFormData({
+                                              vaccineCategory: "Additional",
+                                              vaccineName: vacName.replace(" (Cats)", ""),
+                                              batchNo: "",
+                                              dateGiven: new Date().toISOString().split("T")[0],
+                                              validUntilNextDue: "",
+                                              vetId: clinics.length > 0 ? clinics[0].id : ""
+                                            });
+                                            setShowVacForm(true);
+                                            // scroll to top form container
+                                            document.getElementById("passport-scroll-container")?.scrollTo({ top: 0, behavior: "smooth" });
+                                          }}
+                                          className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-orange-500/10 text-slate-300 hover:text-orange-400 text-xs font-semibold border border-slate-800 hover:border-orange-500/20 transition-all duration-200"
+                                        >
+                                          + Add
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           </div>
                         </div>
 
+                        {/* Other Diagnostic Tests Table (Image 2) */}
+                        {(() => {
+                          const otherTests = medicalRecords.filter(r => r.recordType === "Test" && r.details?.testName !== "Rabies Titer");
+                          return (
+                            <div className="pt-4 border-t border-slate-800">
+                              <div className="flex items-center justify-between mb-3">
+                                <div>
+                                  <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">
+                                    Laboratory diagnostics
+                                  </div>
+                                  <h3 className="text-sm font-bold text-white">OTHER DIAGNOSTIC TESTS</h3>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => startAddMed("Test", "CBC")}
+                                  className="px-3.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 hover:text-white text-xs font-semibold border border-indigo-500/20 hover:border-indigo-500/40 transition-all duration-200"
+                                >
+                                  + Log Test
+                                </button>
+                              </div>
+
+                              <div className="bg-slate-950/60 p-5 rounded-2xl border border-slate-800">
+                                {otherTests.length === 0 ? (
+                                  <p className="text-xs text-slate-500 text-center italic py-2">No other diagnostic test records found.</p>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                      <thead>
+                                        <tr className="border-b border-slate-900 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                                          <th className="py-2 px-3">Date</th>
+                                          <th className="py-2 px-3">Test Type</th>
+                                          <th className="py-2 px-3">Result</th>
+                                          <th className="py-2 px-3">Lab / Clinic</th>
+                                          <th className="py-2 px-3 text-right">Actions</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {otherTests.map((t) => (
+                                          <tr key={t.id} className="hover:bg-slate-900/20 text-slate-300 font-mono">
+                                            <td className="py-2 px-3">{new Date(t.date).toLocaleDateString()}</td>
+                                            <td className="py-2 px-3 font-bold text-indigo-400">{t.details.testName}</td>
+                                            <td className="py-2 px-3 text-emerald-400 font-bold">{t.details.result || "Normal"}</td>
+                                            <td className="py-2 px-3 text-slate-400 truncate max-w-[120px]">{t.details.labName || "—"}</td>
+                                            <td className="py-2 px-3 text-right font-sans">
+                                              <div className="flex items-center justify-end gap-1.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => startEditMed(t)}
+                                                  className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-400 text-xs font-semibold border border-slate-800 transition-all"
+                                                >
+                                                  Edit
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeleteMedicalRecord(t.id)}
+                                                  className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold border border-rose-500/20 transition-all"
+                                                >
+                                                  Delete
+                                                </button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {/* Parasite & Surgery Logs Container */}
-                        <div className="pt-8 border-t border-slate-800 space-y-6">
+                        <div className="pt-4 border-t border-slate-800 space-y-4">
                           <div>
                             <div className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-1">
                               Parasitic Defenses
                             </div>
                             <h3 className="text-sm font-bold text-white mb-3">INTERNAL & EXTERNAL PARASITE TREATMENT</h3>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
-                                <span className="block text-[10px] text-slate-500 font-bold uppercase mb-2">Deworming (Internal)</span>
-                                <div className="text-xs text-slate-400 space-y-1">
-                                  <div className="flex justify-between"><span className="text-slate-600">Product:</span><span>Drontal Plus</span></div>
-                                  <div className="flex justify-between"><span className="text-slate-600">Dose:</span><span>1 Tab</span></div>
-                                  <div className="flex justify-between"><span className="text-slate-600">Next Due:</span><span className="font-mono text-amber-400">10/08/2025</span></div>
-                                </div>
-                              </div>
-                              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
-                                <span className="block text-[10px] text-slate-500 font-bold uppercase mb-2">Flea & Tick (External)</span>
-                                <div className="text-xs text-slate-400 space-y-1">
-                                  <div className="flex justify-between"><span className="text-slate-600">Product:</span><span>Frontline Combo</span></div>
-                                  <div className="flex justify-between"><span className="text-slate-600">Dose:</span><span>1 Pipette</span></div>
-                                  <div className="flex justify-between"><span className="text-slate-600">Next Due:</span><span className="font-mono text-amber-400">10/07/2025</span></div>
-                                </div>
-                              </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                              {/* Deworming (Internal) */}
+                              {(() => {
+                                const deworm = medicalRecords.find(r => r.recordType === "Treatment" && r.details?.treatmentType === "Internal");
+                                return (
+                                  <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <span className="block text-[10px] text-slate-500 font-bold uppercase">Deworming (Internal)</span>
+                                      {deworm ? (
+                                        <div className="flex items-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => startEditMed(deworm)}
+                                            className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-400 text-xs font-semibold border border-slate-800 transition-all"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteMedicalRecord(deworm.id)}
+                                            className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold border border-rose-500/20 transition-all"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => startAddMed("Treatment", "Deworming")}
+                                          className="px-3 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-white text-xs font-semibold border border-amber-500/20 hover:border-amber-500/40 transition-all duration-200"
+                                        >
+                                          + Log
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-slate-400 space-y-1.5 font-mono">
+                                      <div className="flex justify-between pb-1 border-b border-slate-900/40"><span className="text-slate-500 font-sans">Product:</span><span className="font-bold text-slate-300">{deworm?.details?.product || "—"}</span></div>
+                                      <div className="flex justify-between pb-1 border-b border-slate-900/40"><span className="text-slate-500 font-sans">Dose:</span><span className="font-bold text-slate-300">{deworm?.details?.dose || "—"}</span></div>
+                                      <div className="flex justify-between pt-0.5"><span className="text-slate-500 font-sans">Next Due:</span><span className="text-amber-400 font-bold">{deworm?.details?.nextDue ? new Date(deworm.details.nextDue).toLocaleDateString() : "—"}</span></div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Flea & Tick (External) */}
+                              {(() => {
+                                const external = medicalRecords.find(r => r.recordType === "Treatment" && r.details?.treatmentType === "External");
+                                return (
+                                  <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <span className="block text-[10px] text-slate-500 font-bold uppercase">Flea & Tick (External)</span>
+                                      {external ? (
+                                        <div className="flex items-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => startEditMed(external)}
+                                            className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-400 text-xs font-semibold border border-slate-800 transition-all"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteMedicalRecord(external.id)}
+                                            className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold border border-rose-500/20 transition-all"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => startAddMed("Treatment", "External")}
+                                          className="px-3 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-white text-xs font-semibold border border-amber-500/20 hover:border-amber-500/40 transition-all duration-200"
+                                        >
+                                          + Log
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-slate-400 space-y-1.5 font-mono">
+                                      <div className="flex justify-between pb-1 border-b border-slate-900/40"><span className="text-slate-500 font-sans">Product:</span><span className="font-bold text-slate-300">{external?.details?.product || "—"}</span></div>
+                                      <div className="flex justify-between pb-1 border-b border-slate-900/40"><span className="text-slate-500 font-sans">Dose:</span><span className="font-bold text-slate-300">{external?.details?.dose || "—"}</span></div>
+                                      <div className="flex justify-between pt-0.5"><span className="text-slate-500 font-sans">Next Due:</span><span className="text-amber-400 font-bold">{external?.details?.nextDue ? new Date(external.details.nextDue).toLocaleDateString() : "—"}</span></div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
 
                           {/* Surgery/Procedure Record */}
-                          <div className="pt-4 border-t border-slate-800/60">
-                            <span className="block text-[10px] text-slate-500 font-bold uppercase mb-2">Medical & Surgery Notes</span>
-                            <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 text-xs italic text-slate-500">
-                              Continuous monitoring authorized. No invasive surgical diagnostics required at target timeline. Standard clinical recovery arrays intact.
+                          <div className="pt-3 border-t border-slate-800/40">
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="block text-[10px] text-slate-500 font-semibold uppercase">Medical & Surgery Notes</span>
+                              {(() => {
+                                const surgery = medicalRecords.find(r => r.recordType === "Surgery");
+                                return surgery ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditMed(surgery)}
+                                      className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-400 text-xs font-semibold border border-slate-800 transition-all"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteMedicalRecord(surgery.id)}
+                                      className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold border border-rose-500/20 transition-all"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => startAddMed("Surgery")}
+                                    className="px-3 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-white text-xs font-semibold border border-purple-500/20 hover:border-purple-500/40 transition-all duration-200"
+                                  >
+                                    + Log Notes
+                                  </button>
+                                );
+                              })()}
                             </div>
+                            {(() => {
+                              const surgery = medicalRecords.find(r => r.recordType === "Surgery");
+                              return (
+                                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-xs italic text-slate-300">
+                                  {surgery?.details?.notes || "No surgical or sterilization procedures recorded for this pet. Update notes to document clinical history."}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
 
