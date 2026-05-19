@@ -43,7 +43,6 @@ const ClinicIcon = () => (
 
 export default function NavigationHeader() {
   const pathname = usePathname();
-  if (pathname === "/login" || pathname === "/register") return null;
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ owners: any[]; pets: any[]; microchips: any[] }>({
     owners: [],
@@ -86,6 +85,9 @@ export default function NavigationHeader() {
 
     return () => clearTimeout(timer);
   }, [query]);
+
+  // Early return AFTER all hooks to comply with React's rules of hooks
+  if (pathname === "/login" || pathname === "/register") return null;
 
   const totalHits = results.owners.length + results.pets.length + results.microchips.length;
 
